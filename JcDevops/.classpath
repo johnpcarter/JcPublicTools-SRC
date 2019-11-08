@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.8"/>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcPublicTools/code/jars/static/jc-common_1_5.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/che-core-commons-annotations-6.15.0.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/che-core-commons-inject-6.15.0.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/che-core-commons-json-6.15.0.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/docker-client-8.16.0.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/guava-20.0.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/hk2-api-2.4.0-b34.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/hk2-locator-2.4.0-b34.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/hk2-utils-2.4.0-b34.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/jackson-datatype-guava-2.9.6.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/jackson-jaxrs-base-2.5.4.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/jackson-jaxrs-json-provider-2.5.4.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/jackson-module-jaxb-annotations-2.5.4.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/javax.annotation-api-1.2.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/javax.inject-1.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/javax.inject-2.4.0-b34.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/javax.ws.rs-api-2.0.1.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/jersey-apache-connector-2.22.2.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/jersey-client-2.22.2.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/jersey-common-2.22.2.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/jersey-entity-filtering-2.22.2.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/jersey-guava-2.22.2.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/jersey-media-json-jackson-2.22.2.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/org.eclipse.jgit-5.1.3.201810200350-r.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/swagger-annotations-1.5.9.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/IntegrationServer/lib/wm-isserver.jar"/>
+	<classpathentry kind="lib" path="C:/SoftwareAG/10.5/common/lib/wm-isclient.jar"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>
