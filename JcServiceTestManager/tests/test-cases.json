@@ -1,0 +1,23 @@
+{
+	"tests" : [
+		{
+			"active": true,
+			"name": "test 1",
+			"service": "sag._account.pub:getAccountInfoForID",
+			"host": "localhost",
+			"port": "5555",
+			"user": "Administrator",
+			"password": "manage",
+			"requestTemplate": {
+				"origin": "file",
+				"contentType": "idata",
+				"location": "in.tst"
+			},
+			"responseTemplate": {
+				"origin": "file",
+				"contentType": "idata",
+				"location": "out.tst"
+			}
+		}
+	]
+}
