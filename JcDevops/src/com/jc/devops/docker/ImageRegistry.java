@@ -59,7 +59,12 @@ public class ImageRegistry implements ProgressHandler {
 			
 		while (!found && images.hasNext()) {
 				
-				found = images.next().repoTags().get(0).equals(tag);
+			for (String foundTag : images.next().repoTags()) {
+				if (foundTag.equals(tag)) {
+					found = true;
+					break;
+				}
+			}
 		}
 		
 		return found;
@@ -78,10 +83,12 @@ public class ImageRegistry implements ProgressHandler {
 		
 			imgs.forEach((i) -> {
 						
-				standard.check(i.repoTags().get(0));
+				if (i.repoTags() != null) {
+					String type = standard.check(i.repoTags().get(0));
 				
-				if (filter == null || (i.repoTags() != null && i.repoTags().get(0).startsWith(filter)))
-					rimages.add(makeImageDoc(i));
+					if (filter == null || (i.repoTags() != null && i.repoTags().get(0).startsWith(filter)))
+						rimages.add(makeImageDoc(i, type));
+				}
 			});
 			
 			if (includeSagDefaultImages)
@@ -114,7 +121,7 @@ public class ImageRegistry implements ProgressHandler {
 		Image image = getImageForTag(tag);
 		
 		if (image != null)
-			return makeImageDoc(image);
+			return makeImageDoc(image, new DefaultImageChecker("10.5").check(tag));
 		else
 			return null;
 	}
@@ -125,7 +132,7 @@ public class ImageRegistry implements ProgressHandler {
 		this.notify();
 	}
 	
-	private static boolean isVersion(String v) {
+	public static boolean isVersion(String v) {
 		
 		return v.equals("latest") || v.matches("\\d{1,3}") || v.matches("^(v|V|)\\d{1,3}\\.\\d{1,3}(?:\\.\\d{1,6})?$") || v.matches("^(v|V|)\\d{1,3}\\_\\d{1,3}(?:\\_\\d{1,6})?$");
 	}
@@ -146,7 +153,7 @@ public class ImageRegistry implements ProgressHandler {
 		return image;
 	}
 	
-	private static IData makeImageDoc(Image image) {
+	private static IData makeImageDoc(Image image, String type) {
 		
 		IData doc = IDataFactory.create();
 		IDataCursor c = doc.getCursor();
@@ -173,6 +180,8 @@ public class ImageRegistry implements ProgressHandler {
 			
 			if (image.labels().get("TYPE") != null)
 				IDataUtil.put(c, "type", image.labels().get("TYPE"));
+			else
+				IDataUtil.put(c, "type", type);
 			
 			if (image.labels().get("CUSTOM") != null)
 				IDataUtil.put(c, "isCustom", image.labels().get("CUSTOM"));
@@ -183,11 +192,16 @@ public class ImageRegistry implements ProgressHandler {
 			if (image.labels().get("SAG") != null)
 				IDataUtil.put(c, "isSagImage", image.labels().get("SAG"));
 			
+			if (image.labels().get("PRIMARY_PORT") != null)
+				IDataUtil.put(c, "primaryPort", image.labels().get("PRIMARY_PORT"));
+			
 			if (image.labels().get("STATUS") != null)
 				IDataUtil.put(c, "status", image.labels().get("STATUS"));
 			
 			if (image.labels().get("TEST-STATUS") != null)
 				IDataUtil.put(c, "testStatus", image.labels().get("TEST-STATUS"));
+		} else {
+			IDataUtil.put(c, "type", type);
 		}
 		
 		if (tag != null && tag.indexOf(":") != -1) {

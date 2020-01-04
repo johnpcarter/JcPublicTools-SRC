@@ -1,10 +1,10 @@
 package com.jc.devops.docker;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.FileSystems;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -16,7 +16,8 @@ import com.spotify.docker.client.exceptions.DockerException;
 import com.spotify.docker.client.messages.ContainerConfig;
 import com.spotify.docker.client.messages.ContainerCreation;
 import com.spotify.docker.client.messages.ProgressMessage;
-import com.wm.app.b2b.server.ServerAPI;
+import com.spotify.docker.client.shaded.org.apache.commons.archivers.tar.TarArchiveEntry;
+import com.spotify.docker.client.shaded.org.apache.commons.archivers.tar.TarArchiveInputStream;
 import com.wm.app.b2b.server.ServiceException;
 
 public class DockerBuilder {
@@ -54,13 +55,16 @@ public class DockerBuilder {
 		
 		final AtomicReference<String> imageIdFromMessage = new AtomicReference<>();
 		
-		System.out.println("build started");
+		System.out.println("build started with: " + buildDir + " on " + dockerHost + " for " + toImage);
+		
+		if (params == null)
+			params = new BuildParam[0];
 		
 		String returnedImageId = null;
 		
 		try {
 			DockerClient dockerClient = DockerConnectionUtil.createDockerClient(dockerHost, httpsCert);
-
+			
 			returnedImageId = dockerClient.build(FileSystems.getDefault().getPath(buildDir), toImage, new ProgressHandler() {
 			      @Override
 			      public void progress(ProgressMessage message) throws DockerException {
@@ -74,8 +78,9 @@ public class DockerBuilder {
 
 			        	try {
 							postBuild(dockerClient, imageId, buildDir);
-						} catch (InterruptedException | ServiceException e) {
-							WebSocketContainerLogger.log(e.getLocalizedMessage());
+						} catch (InterruptedException | DockerException | IOException e) {
+							e.printStackTrace();
+							WebSocketContainerLogger.log(e.getMessage());
 						}
 			        }
 			      }
@@ -83,8 +88,10 @@ public class DockerBuilder {
 					
 		} catch (DockerCertificateException | DockerException | InterruptedException | IOException e) {
 			
-			WebSocketContainerLogger.log("Docker build failed due to " + e);
-			throw new ServiceException("Docker build failed due to " + e);
+			e.printStackTrace();
+			
+			WebSocketContainerLogger.log("Docker build failed due to " + e.getMessage());
+			throw new ServiceException("Docker build failed due to " + e.getMessage());
 		}
 		
 		System.out.println("Comparing " + returnedImageId + " with " + imageIdFromMessage.get());
@@ -108,7 +115,7 @@ public class DockerBuilder {
 		}
 	}
 	
-	private void postBuild(DockerClient dockerClient, String imageId, String buildDir) throws DockerException, InterruptedException, ServiceException {
+	private void postBuild(DockerClient dockerClient, String imageId, String buildDir) throws DockerException, InterruptedException, IOException {
 		
         if (toImageLatest != null) {
       	  WebSocketContainerLogger.log("Tagging new image " + imageId + " with " + toImageLatest);
@@ -131,32 +138,46 @@ public class DockerBuilder {
     		String containerId = creation.id();
     		
     		for (int i = 0; i < this._extractDirs.length; i++) {
-        		copyContentsFromContainer(dockerClient, containerId, this._extractDirs[i], new File(_extractDirs[i] + ".tar"));
+        		copyContentsFromContainer(dockerClient, containerId, this._extractDirs[i], new File(buildDir));
     		}
+    		
+    		dockerClient.removeContainer(containerId);
         }
 	}
-	
-	private void copyContentsFromContainer(DockerClient client, String containerId, String remoteDir, File localArchive) {
-		
-    	WebSocketContainerLogger.log("Extracting directory '" + remoteDir + "' from container #" + containerId + " to " + localArchive.getAbsolutePath());
 
-		try (final BufferedInputStream in = new BufferedInputStream(client.archiveContainer(containerId, remoteDir));
-			 final BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(localArchive))) {
+	public static void copyContentsFromContainer(DockerClient client, String containerId, String remoteDir, File localDir) throws DockerException, InterruptedException, IOException {
+		
+		
+    	WebSocketContainerLogger.log("Extracting directory '" + remoteDir + "' from container #" + containerId + " to " + localDir.getAbsolutePath());
+    	    	
+    	try (TarArchiveInputStream tarStream = new TarArchiveInputStream(client.archiveContainer(containerId, remoteDir))) {
+    		  TarArchiveEntry entry;
+    		  while ((entry = tarStream.getNextTarEntry()) != null) {
+    		    
+    		    writeToFile(entry.getName(), tarStream, localDir);
+    		  }
+			
+    		  try {
+    			  tarStream.close();
+    		  } catch(Exception e) {
+    			  // ignore, throws exception even on sucess
+    		  }
+    		  
+    		  WebSocketContainerLogger.log("Extraction of " + localDir.getAbsolutePath() + "' completed");
+		}     	
+	}
+	
+	private static void writeToFile(String fileName, InputStream in, File localDir) throws IOException {
+		
+		try (final BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(new File(localDir, fileName)))) {
 
 			int read = 0;
-			byte buf[] = new byte[1024];
+			byte buf[] = new byte[10240];
+			
 			while ((read=in.read(buf)) > 0) {
+							
 			    out.write(buf, 0, read);
 			}
-		} catch (IOException e) {
-			ServerAPI.logError(e);
-			WebSocketContainerLogger.log(e.getLocalizedMessage());
-		} catch (DockerException e) {
-			ServerAPI.logError(e);
-			WebSocketContainerLogger.log(e.getLocalizedMessage());
-		} catch (InterruptedException e) {
-			ServerAPI.logError(e);
-			WebSocketContainerLogger.log(e.getLocalizedMessage());
 		}
 	}
 }

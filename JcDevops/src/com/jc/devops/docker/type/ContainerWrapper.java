@@ -1,4 +1,4 @@
-package com.jc.devops.docker;
+package com.jc.devops.docker.type;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -26,6 +26,7 @@ public class ContainerWrapper {
 		IDataCursor c = doc.getCursor();
 		
 		IDataUtil.put(c, "id", _container.id());
+		IDataUtil.put(c, "names", _container.names().toArray(new String[_container.names().size()]));
 		IDataUtil.put(c, "image", _container.image());
 		IDataUtil.put(c, "createdDate", formatDate(new Date(_container.created()*1000)));
 		IDataUtil.put(c, "Created", "" + _container.created()*1000);

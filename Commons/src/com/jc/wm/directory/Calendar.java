@@ -1,14 +1,11 @@
 package com.jc.wm.directory;
 
-import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.TimeZone;
-
-import org.apache.log4j.lf5.util.DateFormatManager;
 
 import com.webmethods.sc.calendar.CalendarException;
 import com.webmethods.sc.calendar.CalendarSystemFactory;
@@ -30,7 +27,7 @@ public class Calendar {
 	private String _datePattern = "yyyyMMdd hh:mm:ss";
 	
 	public Calendar() throws ServiceException {
-		
+				
 		try {
 			_cm = CalendarSystemFactory.getCalendarSystem().getCalendarManager();
 		} catch (CalendarException e) {

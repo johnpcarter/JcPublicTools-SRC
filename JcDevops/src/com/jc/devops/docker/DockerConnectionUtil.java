@@ -19,17 +19,23 @@ public class DockerConnectionUtil {
 		//return new DefaultDockerClient("unix:///var/run/docker.sock");
 		
 		if (dockerHost == null || dockerHost.equals("") || dockerHost.equals("null") || dockerHost.equals(":null")) {
-							
+					
+			System.out.println("default socket connection");
+			
 			return DefaultDockerClient.fromEnv().build();
 			
 		} else if (httpsCertificate != null && !httpsCertificate.equals("null")) {
 			
+			System.out.println("https socket connection, requires path to https key cert store");
+
 			return DefaultDockerClient.builder()
 					.uri(URI.create("https://" + dockerHost))
 					.dockerCertificates(new DockerCertificates(Paths.get(httpsCertificate)))
 					.build();
 		} else {
 				
+			System.out.println("plain http socket connection");
+
 			return DefaultDockerClient.builder()
 					.uri(URI.create("http://" + dockerHost))
 				    .build();

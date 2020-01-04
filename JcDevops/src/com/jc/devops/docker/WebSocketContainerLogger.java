@@ -9,6 +9,7 @@ import com.spotify.docker.client.DockerClient;
 import com.spotify.docker.client.DockerClient.AttachParameter;
 import com.spotify.docker.client.LogStream;
 import com.spotify.docker.client.exceptions.DockerException;
+import com.webmethods.sc.calendar.Messages;
 import com.wm.app.b2b.server.ServiceException;
 import com.wm.app.b2b.server.UnknownServiceException;
 import com.wm.data.IData;
@@ -114,7 +115,7 @@ public class WebSocketContainerLogger extends OutputStream {
 	
 	 private void logToWebSocket(String message, String sessionId) {
 		
-		if (sessionId == null)
+		if (sessionId == null || message == null || message.length() == 0 || message.equals(".") || message.matches("^\\.+(\\.)"))
 			return;
 		
 		System.out.println("Logging message " + message);
