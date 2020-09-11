@@ -9,7 +9,6 @@ import com.spotify.docker.client.DockerClient;
 import com.spotify.docker.client.DockerClient.AttachParameter;
 import com.spotify.docker.client.LogStream;
 import com.spotify.docker.client.exceptions.DockerException;
-import com.webmethods.sc.calendar.Messages;
 import com.wm.app.b2b.server.ServiceException;
 import com.wm.app.b2b.server.UnknownServiceException;
 import com.wm.data.IData;
@@ -41,10 +40,20 @@ public class WebSocketContainerLogger extends OutputStream {
 	
 	public static void log(String message) {
 		
-		if (_default != null)
+		if (_default != null) {
 			_default.logToWebSocket(message);
-		else
+		} else {
+			System.out.println("Not logging message " + message);
+			
 			_unsent.add(message);
+		}
+	}
+
+	public static void detachDefaultInstance() {
+		
+		if (_default != null) {
+			_default.removeContainerOutput();
+		}
 	}
 
 	private WebSocketContainerLogger(String sessionId, List<String> messagesToSend) {

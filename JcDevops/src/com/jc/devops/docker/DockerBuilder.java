@@ -68,12 +68,15 @@ public class DockerBuilder {
 			returnedImageId = dockerClient.build(FileSystems.getDefault().getPath(buildDir), toImage, new ProgressHandler() {
 			      @Override
 			      public void progress(ProgressMessage message) throws DockerException {
-			        					
+			        				
 			        DockerBuilder.this.processStream(message.stream(), message.error());
 			        
 			        final String imageId = message.buildImageId();
 
 			        if (imageId != null) { 
+			        	
+				        System.out.println("Got image id: " + imageId);
+
 			        	imageIdFromMessage.set(imageId);
 
 			        	try {
@@ -88,6 +91,8 @@ public class DockerBuilder {
 					
 		} catch (DockerCertificateException | DockerException | InterruptedException | IOException e) {
 			
+			System.out.println("Docker build failed due to " + e.getMessage());
+
 			e.printStackTrace();
 			
 			WebSocketContainerLogger.log("Docker build failed due to " + e.getMessage());
@@ -97,6 +102,15 @@ public class DockerBuilder {
 		System.out.println("Comparing " + returnedImageId + " with " + imageIdFromMessage.get());
 		
 		return imageIdFromMessage.get();
+	}
+	
+	public void tag(String id, String tag) {
+		
+		try {
+			DockerConnectionUtil.createDockerClient(dockerHost, httpsCert).tag(id, tag);
+		} catch(Exception e) {
+			WebSocketContainerLogger.log("tagging failed due to error:" + e.getLocalizedMessage());
+		}
 	}
 	
 	private void processStream(String step, String error) {
