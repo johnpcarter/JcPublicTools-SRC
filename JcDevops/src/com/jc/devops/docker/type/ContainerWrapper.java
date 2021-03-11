@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+import com.jc.devops.docker.ImageRegistry;
 import com.spotify.docker.client.messages.Container;
 import com.wm.data.IData;
 import com.wm.data.IDataCursor;
@@ -28,6 +29,11 @@ public class ContainerWrapper {
 		IDataUtil.put(c, "id", _container.id());
 		IDataUtil.put(c, "names", _container.names().toArray(new String[_container.names().size()]));
 		IDataUtil.put(c, "image", _container.image());
+		
+		if ( runningVersion() != null) {
+			IDataUtil.put(c, "runningVersion", runningVersion());
+		}
+		
 		IDataUtil.put(c, "createdDate", formatDate(new Date(_container.created()*1000)));
 		IDataUtil.put(c, "Created", "" + _container.created()*1000);
 		IDataUtil.put(c, "status",_container.status());
@@ -45,6 +51,25 @@ public class ContainerWrapper {
 		c.destroy();
 		
 		return doc;
+	}
+	
+	public String runningVersion() {
+	
+		String name = this._container.image();
+		
+		if (name.contains(":")) {
+			name = name.substring(name.indexOf(":")+1);
+		}
+		
+		if (!ImageRegistry.isVersion(name) && name.contains("-")) {
+			name = name.substring(name.lastIndexOf("-")+1);
+		}
+		
+		if (name.endsWith(".d") || ImageRegistry.isVersion(name)) {
+			return name;
+		} else {
+			return null;
+		}
 	}
 	
 	private IData makePortDoc(Integer privatePort, Integer publicPort, String type) {

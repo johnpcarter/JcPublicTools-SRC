@@ -47,5 +47,7 @@
 	<classpathentry kind="lib" path="/Users/jcart/Programming/Support/java/apache-commons/commons-lang-2.1.jar"/>
 	<classpathentry kind="lib" path="/Users/jcart/Programming/Support/java/apache-commons/commons-logging-api-1.0.4.jar"/>
 	<classpathentry kind="lib" path="/Users/jcart/Programming/Support/java/apache-commons/commons-logging.jar"/>
+	<classpathentry kind="lib" path="/Applications/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcPublicTools/code/jars/commons-compress-1.20.jar"/>
+	<classpathentry kind="lib" path="/Users/jcart/Programming/Support/java/apache-log4j-1.2.15/log4j-1.2.15.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

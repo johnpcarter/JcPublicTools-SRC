@@ -31,18 +31,19 @@ public class DockerContainer {
 	public String image;
 	public String hostname;
 	public boolean active;
-	
-	public Build build;
-	public Port[] ports;
-	public Arg[] env;
-	public Arg[] volumes;
-	public String[] depends;
-	
+	public String type;
+		
 	public String id;
 	public String imageId;
 	
 	public IData readinessProbe;
 	public IData livenessProbe;
+
+	public String[] depends;
+
+	public Build build;
+
+	public Environment[] environments;
 	
 	public DockerContainer(IData doc) {
 		
@@ -51,19 +52,25 @@ public class DockerContainer {
 		this.image = IDataUtil.getString(c, "image");
 		this.hostname = IDataUtil.getString(c, "hostname");
 		this.active = IDataUtil.getString(c, "active") != null && IDataUtil.getString(c, "active").equalsIgnoreCase("true");
+		this.type = IDataUtil.getString(c, "type");
 
 		this.depends = IDataUtil.getStringArray(c, "depends");
-
-		if (IDataUtil.getIData(c, "build") != null)
-			this.build = new Build(IDataUtil.getIData(c, "build"));
-		
-		this.ports = DockerContainer.convertIDataArrayToPorts(IDataUtil.getIDataArray(c, "ports"));
-		this.env = DockerContainer.convertIDataArrayToArgs(IDataUtil.getIDataArray(c, "env"));
-		this.volumes = DockerContainer.convertIDataArrayToArgs(IDataUtil.getIDataArray(c, "volumes"));
 
 		readinessProbe = IDataUtil.getIData(c, "readinessProbe");
 		livenessProbe = IDataUtil.getIData(c, "livenessProbe");
 
+		if (IDataUtil.getIData(c, "build") != null)
+			this.build = new Build(IDataUtil.getIData(c, "build"));
+		
+		if (IDataUtil.getIDataArray(c, "environments") != null) {
+			IData[] envs = IDataUtil.getIDataArray(c, "environments");
+			this.environments = new Environment[envs.length];
+			
+			int i = 0;
+			for (IData e : envs) {
+				this.environments[i++] = new Environment(e);
+			}
+		}
 		c.destroy();
 		
 		if (hostname == null)
@@ -83,77 +90,35 @@ public class DockerContainer {
 
 		IDataUtil.put(c, "hostname", hostname);
 		IDataUtil.put(c, "active", "" + active);
+		IDataUtil.put(c, "type", type);
+
 		IDataUtil.put(c, "id",  id);
 		IDataUtil.put(c, "imageId",  imageId);
 		IDataUtil.put(c, "depends",  depends);
 
 		IDataUtil.put(c, "readinessProbe", this.readinessProbe);
 		IDataUtil.put(c, "livenessProbe", this.livenessProbe);
-
 		
-		List<IData> portsOut = new ArrayList<IData>();
 		
-		if (this.ports != null) {
-			for (Port p : this.ports) {
-				portsOut.add(p.toIData(true));
-			}
-		}
-		
-		IDataUtil.put(c, "ports",  portsOut.toArray(new IData[portsOut.size()]));
-
-		List<IData> volumesOut = new ArrayList<IData>();
-		
-		if (this.volumes != null) {
-			for (Arg v : this.volumes) {
-				volumesOut.add(v.toIData(true));
-			}
-		}
-		
-		IDataUtil.put(c, "volumes",  volumesOut.toArray(new IData[volumesOut.size()]));
 		
 		List<IData> envOut = new ArrayList<IData>();
 		
-		if (this.env != null) {
-			for (Arg v : this.env) {
-				envOut.add(v.toIData());
+		if (this.environments != null) {
+			for (Environment e : this.environments) {
+				envOut.add(e.toIData());
 			}
 		}
 		
-		IDataUtil.put(c, "env",  envOut.toArray(new IData[envOut.size()]));
+		IDataUtil.put(c, "environments",  envOut.toArray(new IData[envOut.size()]));
+		
 		c.destroy();
 		
 		return d;
 	}
-	
-	public void addEnvVariable(String key, String value) {
-		
-		Arg newElement = new Arg(key, value);
 
-		Arg[] envArray = new Arg[this.env.length+1];
-		
-		for (int i = 0; i < this.env.length; i++) {
-			envArray[i] = env[i];
-		}
-		
-		envArray[this.env.length] = newElement;
-		
-		this.env = envArray;
-	}
-
-	protected void createContainer(DockerClient dockerClient, String buildno, String composeName) throws DockerException, InterruptedException, ServiceException {
-		
-		String imageName = this.image;
-		
-		if (this.build != null) {
-			
-			// need to build image first
-			
-			//imageName = buildno + "-" + (this.image != null ? this.image : name);
-			
-			//this.imageId = this.build.run(dockerClient, this.image, buildno, imageName);
-		} 
-			
-		this._create(dockerClient, imageName, composeName);
+	protected void createContainer(DockerClient dockerClient, String buildno, String composeName, String environmentName) throws DockerException, InterruptedException, ServiceException {
+				
+		this._create(dockerClient, composeName, environmentName);
 	}
 	
 	protected void stop(DockerClient dockerClient) throws DockerException, InterruptedException {
@@ -169,24 +134,26 @@ public class DockerContainer {
 			dockerClient.removeImage(this.imageId);
 	}
 	
-	private String _create(DockerClient dockerClient, String imageName, String composeName) throws DockerException, InterruptedException {
+	private String _create(DockerClient dockerClient, String composeName, String environmentName) throws DockerException, InterruptedException {
 					
-		if (!new ImageRegistry(dockerClient).haveImage(imageName)) {
+		if (!new ImageRegistry(dockerClient).haveImage(image)) {
 			
 			if (ImageRegistry.defaultRemoteRegistry() != null) {
-				WebSocketContainerLogger.log("Pulling image '" + imageName + "' from remote repository");
-				ImageRegistry.defaultRemoteRegistry().pull(imageName);
+				WebSocketContainerLogger.log("Pulling image '" + image + "' from remote repository");
+				ImageRegistry.defaultRemoteRegistry().pull(image);
 			} else {
 				WebSocketContainerLogger.log("Image not found, but cannot pull from remote repository as you have not provided credentials");
 			}	
 		} 
 		
-		List<String> envList = setupEnvList();
+		Environment env = this.getEnvironment(environmentName);
+		
+		List<String> envList = env.setupEnvList();
 
-		Map<String, List<PortBinding>> portBindings = setUpPointBindings();
+		Map<String, List<PortBinding>> portBindings = env.setUpPointBindings();
 		final Builder hostConfigBuilder = HostConfig.builder().portBindings(portBindings);
 							
-		setupVolumeMounts(dockerClient, this.name, composeName, hostConfigBuilder);
+		env.setupVolumeMounts(dockerClient, this.name, composeName, hostConfigBuilder);
 
 		final HostConfig hostConfig = hostConfigBuilder.build();
 		
@@ -195,8 +162,8 @@ public class DockerContainer {
 		final ContainerConfig containerConfig = ContainerConfig.builder()
 		    .hostConfig(hostConfig)
 		    .hostname(this.hostname)
-		    .image(imageName)
-		    .exposedPorts(this.exposedPorts())
+		    .image(image)
+		    .exposedPorts(env.exposedPorts())
 		    .env(envList).build();
 
 		ContainerCreation creation = dockerClient.createContainer(containerConfig, this.name);
@@ -206,110 +173,20 @@ public class DockerContainer {
 		return id;
 	}
 	
-	private void  setupVolumeMounts(DockerClient dockerClient, String owner, String composeName, Builder build) throws DockerException, InterruptedException {
-		
-		if (this.volumes == null)
-			return;
-		
-		if (owner == null || owner.equals(""))
-			owner = "def";
-		
-		ImmutableList<Volume> volumeList = dockerClient.listVolumes().volumes();
-							
-		for (int i = 0; i < this.volumes.length; i++) {
-			
-			if (this.volumes[i].source.startsWith("/")) {
+	Environment getEnvironment(String name) {
+	
+		if (name == null || this.environments.length == 0) {
+			return this.environments[0];
+		} else {
+			for (Environment e : this.environments) {
 				
-				// local file based mount
-				
-				build.appendBinds(this.volumes[i].source + ":" + this.volumes[i].target);
-				
-			} else {
-				
-				String id = owner + "_" + this.volumes[i].source;
-				
-				if (composeName !=  null && !composeName.equals(""))
-					id = composeName + "_" + id;
-				
-				Volume v = this.volumeForName(volumeList, id);
-				
-				if (v == null) {
-				
-					Volume toCreate = Volume.builder()
-							.name(id)
-							.mountpoint(this.volumes[i].target)
-							.build();
-					
-					v = dockerClient.createVolume(toCreate);
+				if (e.name.equalsIgnoreCase(name)) {
+					return e;
 				}
-				
-				build.appendBinds(Bind.from(v).to(this.volumes[i].target).build());
-			}
-		}
-	}
-	
-	private Volume volumeForName(ImmutableList<Volume> volumeList, String name) {
-		
-		Volume found = null;
-		
-		for (int i = 0; i < volumeList.size(); i++) {
-			
-			if (volumeList.get(i).name().equals(name)) {
-				found = volumeList.get(i);
-				break;
 			}
 		}
 		
-		return found;
-	}
-	
-	private List<String> setupEnvList() {
-		
-		ArrayList<String> out = new ArrayList<>();
-		
-		if (this.env == null)
-			return out;
-		
-		for (int i = 0; i < this.env.length; i++) {
-		
-			out.add(this.env[i].source + "=" + this.env[i].target);
-		}
-		
-		return out;
-	}
-
-	private Set<String> exposedPorts() {
-	
-		Set<String> out = new HashSet<String>();
-		
-		for (int i = 0; i < this.ports.length; i++) {
-			  
-			out.add(this.ports[i].internal);
-		}
-		
-		return out;
-	}
-	
-	private Map<String, List<PortBinding>> setUpPointBindings() {
-		
-		final Map<String, List<PortBinding>> portBindings = new HashMap<>();
-		
-		for (int i = 0; i < this.ports.length; i++) {
-			  
-			if (this.ports[i].external != null)
-				this.createPortBinding(portBindings, Integer.parseInt(this.ports[i].internal), Integer.parseInt(this.ports[i].external)); 
-		}
-
-		return portBindings;
-	}
-	
-	private void createPortBinding(Map<String, List<PortBinding>> portBindings, int from, int to) {
-	    
-	    
-		List<PortBinding> hostPorts = new ArrayList<>();
-	    
-		hostPorts.add(PortBinding.of("0.0.0.0", to));
-	    portBindings.put(String.valueOf(from), hostPorts);
+		return this.environments[0];
 	}
 	
 	public String[] toStringList(Port[] args) {

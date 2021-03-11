@@ -6,5 +6,6 @@
 	<classpathentry combineaccessrules="false" kind="src" path="/Commons"/>
 	<classpathentry kind="lib" path="/Applications/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/docker-client-8.16.1-shaded.jar"/>
 	<classpathentry kind="lib" path="/Applications/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcDevopsConsole/code/jars/org.eclipse.jgit-5.5.1.201910021850-r.jar"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/JcDevopsConsole"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

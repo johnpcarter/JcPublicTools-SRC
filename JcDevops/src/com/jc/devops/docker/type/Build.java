@@ -26,6 +26,7 @@ import com.wm.data.IDataUtil;
 
 public class Build {
 	
+	public String name;
 	public String context;
 	public String dockerFile;
 	public Map<String, BuildCommand> buildCommands;
@@ -34,9 +35,17 @@ public class Build {
 		
 	public String imageId;
 	
+	public Build(Image sourceImage, Image targetImage) {
+	
+		this.buildCommands = new HashMap<String, BuildCommand>();
+		this.sourceImage = sourceImage;
+		this.targetImage = targetImage;
+	}
+	
 	public Build(IData doc) {
 		
 		IDataCursor c = doc.getCursor();
+		this.name = IDataUtil.getString(c, "name");
 		this.context = IDataUtil.getString(c, "context");
 		this.dockerFile = IDataUtil.getString(c, "dockerFile");
 		IData[] commands = IDataUtil.getIDataArray(c, "buildCommands");
@@ -66,7 +75,12 @@ public class Build {
 		IData d = IDataFactory.create();
 		IDataCursor c = d.getCursor();
 		
+		IDataUtil.put(c, "name", name);
 		IDataUtil.put(c, "context", context);
+		
+		if (this.sourceImage != null)
+			IDataUtil.put(c, "fromImage", this.sourceImage.tag);
+		
 		IDataUtil.put(c, "dockerFile", dockerFile);
 
 		List<IData> out = new ArrayList<IData>();
@@ -169,12 +183,16 @@ public class Build {
 		return c;
 	}
 	
-	public class Image {
+	static public class Image {
 		
 		public String repository;
 		public String name;
 		public String version;
 		public String tag;
+		
+		Image(String tag) {
+			this.tag = tag;
+		}
 		
 		Image(IData doc) {
 			

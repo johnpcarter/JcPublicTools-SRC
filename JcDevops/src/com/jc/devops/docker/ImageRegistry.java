@@ -58,11 +58,15 @@ public class ImageRegistry implements ProgressHandler {
 		Iterator<Image> images = _client.listImages().iterator();
 			
 		while (!found && images.hasNext()) {
-				
-			for (String foundTag : images.next().repoTags()) {
-				if (foundTag.equals(tag)) {
-					found = true;
-					break;
+			
+			Image img = images.next();
+					
+			if (img.repoTags() != null) {
+				for (String foundTag : img.repoTags()) {
+					if (foundTag.equals(tag)) {
+						found = true;
+						break;
+					}
 				}
 			}
 		}
@@ -85,9 +89,12 @@ public class ImageRegistry implements ProgressHandler {
 						
 				if (i.repoTags() != null) {
 					String type = standard.check(i.repoTags().get(0));
-				
-					if (filter == null || (i.repoTags() != null && i.repoTags().get(0).startsWith(filter)))
-						rimages.add(makeImageDoc(i, type));
+					if (filter == null || (i.repoTags() != null && i.repoTags().get(0).startsWith(filter))) {
+						String t  = i.repoTags().get(0);
+					
+						if (!t.endsWith(".d") && !t.contains("<none>"))
+							rimages.add(makeImageDoc(i, type));
+					}
 				}
 			});
 			
@@ -134,7 +141,11 @@ public class ImageRegistry implements ProgressHandler {
 	
 	public static boolean isVersion(String v) {
 		
-		return v.equals("latest") || v.matches("\\d{1,3}") || v.matches("^(v|V|)\\d{1,3}\\.\\d{1,3}(?:\\.\\d{1,6})?$") || v.matches("^(v|V|)\\d{1,3}\\_\\d{1,3}(?:\\_\\d{1,6})?$");
+		return v.equals("latest") || v.equals("lts") 
+				|| v.matches("^(v|V|)([0-9]{1,4}(\\.[0-9a-z]{1,6}){1,5})");
+				//|| v.matches("^(v|V|)\\d{1,3}(?:\\.\\d{1,6})(?:\\.\\d{1,6})(?:\\\\.\\\\d{1,6})?$")
+				//|| v.matches("^(v|V|)\\d{1,3}\\_\\d{1,3}(?:\\_\\d{1,6})(?:\\\\_\\\\d{1,6})?$")
+				//;
 	}
 	
 	private Image getImageForTag(String tag) throws DockerException, InterruptedException {
@@ -204,6 +215,8 @@ public class ImageRegistry implements ProgressHandler {
 			IDataUtil.put(c, "type", type);
 		}
 		
+		//System.out.println("** TAG ** is " + tag);
+		
 		if (tag != null && tag.indexOf(":") != -1) {
 
 			int split = tag.indexOf(":");
@@ -219,9 +232,13 @@ public class ImageRegistry implements ProgressHandler {
 				// perhaps the repo is in the name part (check if we have a slash)
 
 				if (tag.indexOf("/") != -1) {
-					int s = tag.lastIndexOf("/");
+					int s = before.lastIndexOf("/");
+					IDataUtil.put(c, "_repository", before.substring(0, s));
+					IDataUtil.put(c, "_name", before.substring(s+1));
+				} else {
+					// there is no repo name
+					int s = tag.lastIndexOf(":");
 					IDataUtil.put(c, "_repository", tag.substring(0, s));
-					IDataUtil.put(c, "_name", tag.substring(s+1));
 				}
 			} else {
 				// name is in tag part!!

@@ -43,7 +43,7 @@ public class DockerComposeImpl {
 		}
 	}
 	
-	public void run(String buildno, String containers) throws ServiceException {
+	public void run(String buildno, String containers, String environment) throws ServiceException {
 		
 		int count = 0;
 		
@@ -66,7 +66,7 @@ public class DockerComposeImpl {
 								
 								WebSocketContainerLogger.log("Can now start service '" + svc.name + "' dependent service is now ready: " + svc.dependsOn);
 
-								this._run(svc, buildno, containers);
+								this._run(svc, buildno, containers, environment);
 							} catch (ServiceException e) {
 								WebSocketContainerLogger.log("Failed to start service '" + svc.name + "' due to error: " + e.getMessage());
 
@@ -83,7 +83,7 @@ public class DockerComposeImpl {
 						WebSocketContainerLogger.log("Cannot start service '" + this.services[i].name + "', dependent on non existant service " + this.services[i].dependsOn);
 					}
 				} else {
-					this._run(this.services[i], buildno, containers);
+					this._run(this.services[i], buildno, containers, environment);
 				}
 				
 				count += 1;
@@ -107,9 +107,9 @@ public class DockerComposeImpl {
 		}
 	}
 		
-	private void _run(Deployment service, String buildno, String containers) throws ServiceException, DockerCertificateException {
+	private void _run(Deployment service, String buildno, String containers, String environment) throws ServiceException, DockerCertificateException {
 		
-		service.run(getClientForService(service), this.name, buildno, containers);
+		service.run(getClientForService(service), this.name, buildno, containers, environment);
 	}
 	
 	private DockerClient getClientForService(Deployment service) throws DockerCertificateException {

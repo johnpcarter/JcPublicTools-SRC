@@ -8,9 +8,6 @@ import java.io.OutputStreamWriter;
 import java.net.URL;
 import java.util.HashMap;
 
-import org.apache.log4j.ConsoleAppender;
-import org.apache.log4j.Logger;
-import org.apache.log4j.PatternLayout;
 import org.junit.Test;
 
 import com.jc.net.ReliableOutboundHttpConnection.ConnectionInterruptedException;
@@ -22,9 +19,7 @@ public class TestReliableHttpConnectionPackage
 
 	@Test
 	public void testSend() 
-	{
-		Logger.getRootLogger().addAppender(new ConsoleAppender(new PatternLayout(PatternLayout.TTCC_CONVERSION_PATTERN)));
-		 
+	{		 
 		HashMap<String, String> props = new HashMap<String, String>();
 		props.put("testheader1", "testvalue1");
 		props.put("testheader2", "testvalue2");

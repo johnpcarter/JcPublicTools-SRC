@@ -15,13 +15,15 @@ import java.util.List;
 import java.util.Map;
 
 import com.jc.devops.docker.DockerConnectionUtil;
+import com.jc.devops.docker.ImageRegistry;
 import com.jc.devops.docker.WebSocketContainerLogger;
+import com.jc.devops.docker.type.Build.Image;
 import com.jc.devops.docker.type.BuildCommand.CommandType;
+import com.jc.devops.docker.type.Port;
 import com.spotify.docker.client.DockerClient;
 import com.spotify.docker.client.exceptions.DockerCertificateException;
 import com.spotify.docker.client.exceptions.DockerException;
 import com.spotify.docker.client.messages.NetworkConfig;
-import com.spotify.docker.client.messages.NetworkCreation;
 import com.wm.app.b2b.server.ServerAPI;
 import com.wm.app.b2b.server.ServiceException;
 import com.wm.data.IData;
@@ -33,6 +35,7 @@ public class Deployment {
 	
 	public String name;
 	public String appName;
+	public String namespace;
 	public String description;
 	public String replicas;
 	public String appSelector;
@@ -40,10 +43,13 @@ public class Deployment {
 	public String type;
 	public String serviceType;
 	public String dependsOn;
+	public String version;
+	
+	public boolean requiresVersioning;
 	
 	public API[] apis;
 	public DockerContainer[] containers;
-				
+
 	private String _defaultDockerHost;
 	private String _defaultDockerCert;
 	
@@ -71,6 +77,7 @@ public class Deployment {
 		IDataCursor c = doc.getCursor();
 		this.name = IDataUtil.getString(c, "name");
 		this.appName = IDataUtil.getString(c, "appName");
+		this.namespace = IDataUtil.getString(c, "namespace");
 		this.description = IDataUtil.getString(c, "description");
 		this.replicas = IDataUtil.getString(c, "replicas");
 		this.appSelector = IDataUtil.getString(c, "appSelector");
@@ -79,8 +86,11 @@ public class Deployment {
 		this.serviceType = IDataUtil.getString(c, "serviceType");
 		this.dependsOn = IDataUtil.getString(c, "dependsOn");
 
+		this.requiresVersioning = IDataUtil.getString(c, "requiresVersioning") != null && IDataUtil.getString(c, "requiresVersioning").toLowerCase().equals("true");
+		
 		IData[] apiDocs = IDataUtil.getIDataArray(c, "apis");
 		IData[] containerDocs = IDataUtil.getIDataArray(c, "containers");
+		
 		c.destroy();
 		
 		if (apiDocs != null) {
@@ -94,7 +104,20 @@ public class Deployment {
 		if (containerDocs != null) {
 			this.containers = new DockerContainer[containerDocs.length];
 			for (int i = 0; i < containerDocs.length; i++) {
-				this.containers[i] = new  DockerContainer(containerDocs[i]);
+				this.containers[i] = new DockerContainer(containerDocs[i]);
+			}
+		}
+		
+		this.version = IDataUtil.getString(c, "version");
+		
+		if (this.requiresVersioning && this.version == null && this.appName != null && this.appName.indexOf("-") != -1) {
+			// look for version in app name
+			
+			int index = this.appName.indexOf("-");
+			String v = this.appName.substring(index+1);
+			
+			if (ImageRegistry.isVersion(v.replace("-", "."))) {
+				this.version = v;
 			}
 		}
 	}
@@ -107,6 +130,7 @@ public class Deployment {
 		IDataUtil.put(c, "name", this.name);
 		IDataUtil.put(c, "description", this.description);
 		IDataUtil.put(c, "appName", this.appName);
+		IDataUtil.put(c, "namespace", this.namespace);
 		IDataUtil.put(c, "replicas", this.replicas);
 		IDataUtil.put(c, "appSelector", this.appSelector);
 		IDataUtil.put(c, "hostName", this.appName);
@@ -115,6 +139,10 @@ public class Deployment {
 		IDataUtil.put(c, "serviceType", this.serviceType);
 		IDataUtil.put(c, "dependsOn", this.dependsOn);
 
+		IDataUtil.put(c, "requiresVersioning", "" + requiresVersioning);
+		
+		IDataUtil.put(c, "version", this.version);
+		
 		List<IData> apisOut = new ArrayList<IData>();
 		
 		if (this.apis != null) {
@@ -138,88 +166,204 @@ public class Deployment {
 		return d;
 	}
 	
-	public Deployment updateContainerReferences(String appPrefix, String namespace, String buildDir, Deployment[] deployments, Build[] builds) {
+	/* 
+	 Updates all end-point references to containers (used in docker-compose) to instead reference k8s services 
+	 */
+	public boolean updateContainerReferences(String appPrefix, String buildDir, Deployment[] deployments, Build[] builds, String environment) {
 			
-		Map<String, String> names = new HashMap<String, String>();
+		boolean buildRequired = false;
+				
+		Map<String, Deployment> names = new HashMap<String, Deployment>();
+		
+		// Identify the deployment to which each container belongs
 		
 		for (Deployment deployment : deployments) {
 						
 			for (DockerContainer c : deployment.containers) {
 				
-				names.put(c.name, deployment.name);
+				if (c.name != null) {
+					names.put(c.name, deployment);
+				}
 			}
 		}
 		
+		// loop over containers, swapping out their references to other containers with correct deployment service
+		
 		for (DockerContainer c: this.containers) {
-				
-			System.out.println("checking container: " + c.name + ", active " + c.active);
+							
+			Environment env = c.getEnvironment(environment);
 			
 			if (c.active) {
 								
-				for (String n : names.keySet()) {
+				for (String containerName : names.keySet()) {
 					
-					System.out.println("checking for name " + n);
-
 					// check env vars
 
-					if (c.env != null) {
-						for (Arg a : c.env) {
-							if (a.target != null && a.target.contains(n)) {
+					if (env.env != null) {
+						for (Arg a : env.env) {
+							if (a.target != null && a.target.contains(containerName) && !a.source.equals("mcgw_downloads_apis")) {
 								
-								a.target = a.target.replace(n, replacement(appPrefix, namespace, names.get(n)));
+								System.out.println("Got a match, will replace with " + names.get(containerName).name);
+								a.target = a.target.replace(containerName, replacement(containerName, appPrefix, names.get(containerName), c, a, environment));
 							}
 						}
 					}
 					
 					// check runtime build params
 
+					boolean propsFileProcessed = false;
+							
 					if (c.build != null) {
 						for (BuildCommand b : c.build.buildCommands.values()) {
-							
+														
 							if (b.commandType == CommandType.file && b.fileType != null && b.fileType.equals("properties")) {
-								updatePropertyFileForReferences(buildDir, buildDir, b.source, n, replacement(appPrefix, namespace, names.get(n)));
+								
+								updatePropertyFileForReferences(buildDir, buildDir, b.source, containerName, replacement(containerName, appPrefix, names.get(containerName), c, null, environment), names.get(containerName).version);
+								propsFileProcessed = true;
 							}
 						}
 					}
-					// if provided, check properties from install time and move them to runtime
 					
-					if (builds != null) {
-						
-						String installProperties = getInstallPropertiesForContainer(builds, c);
-						
-						if (installProperties != null && updatePropertyFileForReferences("./packages/JcDevopsConsole/resources/files/properties", buildDir, installProperties, n, replacement(appPrefix, namespace, names.get(n)))) {
-							BuildCommand b = new BuildCommand(CommandType.file, "other", "resources/" + installProperties + ".properties", "/opt/softwareag/IntegrationServer/" + installProperties + "-ks8.properties");
-							c.build.buildCommands.put(b.source, b);
+					// Do we have a properties file in the underlying image that needs updating ?
+					
+					if (!propsFileProcessed && builds != null) {
+						for (Build b: builds) {
 							
-							c.addEnvVariable("SAG_IS_CONFIG_PROPERTIES", b.target);
-							
-							if (c.build.context == null) {
-								c.build.context = ".";
+							// find build for container
+														
+							if (c.name.toLowerCase().equals(b.name.toLowerCase())) {
+								
+								for (String k : b.buildCommands.keySet()) {
+									
+									BuildCommand bc = b.buildCommands.get(k);
+								
+									if (bc.commandType == CommandType.file && bc.fileType != null && bc.fileType.equals("properties")) {
+									
+										if (environment == null) {
+										
+											// only check generic props file
+											
+											if (!bc.source.startsWith("_")) {
+												buildRequired = addUpdatedPropertiesFileToBuild(c, bc, buildDir, appPrefix, containerName, names, environment) || buildRequired;
+												propsFileProcessed = true;
+											}
+										} else if (bc.source.startsWith("_" + environment.toLowerCase() + "_")) {
+										// only check file specific to this environment or fall back on generic if not set
+											buildRequired = addUpdatedPropertiesFileToBuild(c, bc, buildDir, appPrefix, containerName, names, environment) || buildRequired;
+											propsFileProcessed = true;
+										}
+									}
+								}
 							}
 						}
 					}
 				}
+				
+				// label build with source image, and update container image (to image) to reflect target environment
+				
+				if (c.build != null) {
+					
+					c.build.sourceImage = new Image(c.image);
+
+					if (buildRequired) {
+						c.image = c.image + "." + environment == null ? "p" : environment;
+					} 	
+				}
 			}
 		}
+	
 		
-		return this;
+		return buildRequired;
 	}
 	
-	private String replacement(String appPrefix, String namespace, String deploymentName) {
+	private boolean addUpdatedPropertiesFileToBuild(DockerContainer c, BuildCommand bc, String buildDir, String appPrefix, String containerName, Map<String, Deployment> names, String environment) {
 		
-		if (deploymentName.equals(this.name)) {
+		Build build = null;
+		
+		if (c.build == null) {
+			build = new Build(new Build.Image(c.image), new Build.Image(c.image + ".d"));
+		} else {
+			build = c.build;
+		}
+		
+		BuildCommand cmd = build.buildCommands.get(bc.source);
+		
+		if (cmd == null) {
+			cmd = new BuildCommand(CommandType.file, "properties", bc.source, bc.target);
+		}
+				
+		if (updatePropertyFileForReferences("packages/JcDevopsConsole/resources/files/properties", buildDir, bc.source, containerName, replacement(containerName, appPrefix, names.get(containerName), c, null, environment), names.get(containerName).version)) {
+			
+			// only record it, if we did make a change
+			
+			build.buildCommands.put(bc.source, cmd);
+			
+			if (c.build == null) {
+				c.build = build;
+			}
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	private String replacement(String containerNameToReplace, String appPrefix, Deployment deployment, DockerContainer c, Arg arg, String environment) {
+		
+		if (deployment.name.equals(this.name) && (arg == null || !(arg.source.equals("api_server_url") && c.type.equals("msr")))) {
 			//container is referenced in same host, so we can simply replace it with localhost
 
 			return "localhost";
 		} else {
 			
 			// container is in different deployment, so we need to replace with the name of the service
-			// which will be <prefix>-clusterip-<deployment-name>.<namespace>
+			// which will be <prefix>-<serviceType>-<deployment-name>.<namespace>
 			
+			// find service type for port 
+			
+			String serviceType = "clusterip";
+			
+			for (DockerContainer dc : deployment.containers) {
+				
+				Environment env = c.getEnvironment(environment);
+				
+				if (dc.name.equals(containerNameToReplace)) {
+					for (Port p : env.ports) {
+						if (arg != null && arg.target.contains(":" + p.internal)) {
+							serviceType = p.serviceType.toLowerCase();
+							break;
+						}
+					}
+						
+					/*if (serviceType == null) { 
+						if (env.ports.length > 0) {
+							serviceType = env.ports[0].serviceType.toLowerCase();
+						} else {
+							serviceType = "clusterip";
+						}
+					} else if (serviceType.equals("ingress")) {
+						// use internal service, never external
+						serviceType = "clusterip";
+					}*/
+					
+						
+					break;
+				}
+			}
+			
+			String txt = serviceType + "-" + deployment.name.toLowerCase().replace(" ", "-");
+		
 			if (appPrefix != null)
-				return appPrefix + "clusterip-" + deploymentName.toLowerCase().replace(" ", "-") + "." + namespace;
-			else
-				return "clusterip-" + deploymentName.toLowerCase().replace(" ", "-") + "." + namespace;
+				txt = appPrefix + txt;
+			
+			if (deployment.version != null) {
+				txt += "-" + deployment.version;
+			}
+			
+			if (deployment.namespace != null) {
+				txt += "." + deployment.namespace;
+			}
+			
+			return txt;
 		}
 	}
 	
@@ -228,7 +372,7 @@ public class Deployment {
 		return DockerConnectionUtil.createDockerClient(this._defaultDockerHost, this._defaultDockerCert);
 	}
 	
-	public DockerClient run(DockerClient dockerClient, String composeName, String buildno, String containers) throws ServiceException {
+	public DockerClient run(DockerClient dockerClient, String composeName, String buildno, String containers, String environment) throws ServiceException {
 
 		int count = 0;
 		
@@ -239,7 +383,7 @@ public class Deployment {
                     .name(composeName)
                     .build();
 			
-			NetworkCreation network = dockerClient.createNetwork(networkConfig);
+			dockerClient.createNetwork(networkConfig);
 		} catch (Exception e) {
 					
 			// assume reason for failure is that network already exists;
@@ -260,7 +404,7 @@ public class Deployment {
 						
 						WebSocketContainerLogger.log("Starting Container '" + this.containers[i].name + "'");
 						
-						this.containers[i].createContainer(dockerClient, buildno, composeName);
+						this.containers[i].createContainer(dockerClient, buildno, composeName, environment);
 
 						if (this.containers[i].id != null) {					
 							dockerClient.connectToNetwork(this.containers[i].id, composeName);
@@ -296,6 +440,11 @@ public class Deployment {
 	}
 		
 	public synchronized void waitForWhenReady(DockerClient dockerClient, WakerDelegate waker, long maxWait) {
+		
+		if (this._runningContainers == null) {
+			// Damn, This means no containers were run as part of the current deployment, assume already running as part of a previous launch
+			return;
+		}
 		
 		if (this._checkStatus(dockerClient)) {
 			waker.deploymentsIsReader(this);
@@ -418,48 +567,58 @@ public class Deployment {
 		return done;
 	}
 	
-	private String getInstallPropertiesForContainer(Build[] builds, DockerContainer c) {
-	
-		BuildCommand props = null;
-		
-		for (Build b : builds) {
-			
-			if (b.targetImage.matches(c.image, true)) {
-				props = b.fileForType(CommandType.file, "properties");
-				break;
-			}
-		}
-		
-		return props != null ? props.source : null;
-	}
-	
-	private boolean updatePropertyFileForReferences(String srcDir, String buildDir, String fileName, String ref, String newRef) {
-		
-		boolean update = false;
-		File dir = new File(buildDir, "resources");
-		
-		File inFile;
-		File outFile = new File(dir, fileName + ".properties");
+	private boolean updatePropertyFileForReferences(String srcDir, String buildDir, String fileName, String ref, String newRef, String suffix) {
+				
+		boolean didUpdate = false;
+		File outDir = buildDir.endsWith("/resources") ? new File(buildDir) : new File(buildDir, "resources");		
+		File outFile = new File(outDir, fileName + ".properties");
 
-		if (outFile.exists()) {
-			// already started rebuild, work from already started
+		File inFile;
+		boolean dontDelete = false;
+				
+		if (!outFile.exists()) {
 			
-			inFile = outFile;
-			outFile = new File(buildDir, fileName + ".properties.copy");
+			// read from source
+			
+			outDir.mkdirs();
+			inFile = new File(srcDir, fileName + ".properties");			
 		} else {
-			dir.mkdirs();
-			inFile = new File(srcDir, fileName + ".properties");
+			
+			// already started rebuild, work from already started
+						
+			dontDelete = true;
+			inFile = outFile;
+			outFile = new File(outDir, fileName + ".properties.copy");
 		}
 		
 		try (BufferedReader rdr = new BufferedReader(new FileReader(inFile));
-			 BufferedWriter wrt = new BufferedWriter(new FileWriter(outFile))	) {
+			 BufferedWriter wrt = new BufferedWriter(new FileWriter(outFile))) {
 			
 			String line = null;
 			while((line=rdr.readLine()) != null) {
-				
-				if (line.contains(ref)) {
-					line = line.replace(ref, newRef);
-					update = true;
+								
+				if (line.contains("=")) {
+					int index = line.indexOf("=");
+					String key = line.substring(0, index);
+					String value = line.substring(index+1);
+					
+					if (value.contains(ref)) {
+						line = key + "=" + value.replace(ref, newRef);
+						
+						if (!newRef.endsWith(suffix)) {
+							line += "-" + suffix;
+						}
+						didUpdate = true;
+					} else if (suffix != null && value.length() > 0 && newRef.startsWith(value) && !value.contains(suffix)) {
+						// properties file has already includes new label, but does'n include the suffix yet
+						
+						if (newRef.endsWith(suffix)) {
+							line = key + "=" + value.replace(value, newRef);
+						} else {
+							line = key + "=" + value.replace(value, newRef + "-" + suffix);
+						}
+						didUpdate = true;
+					}
 				}
 				
 				wrt.write(line);
@@ -469,19 +628,28 @@ public class Deployment {
 			e.printStackTrace();
 		}
 		
-		try {
-			if (!update && outFile.exists()) {
-				Files.delete(FileSystems.getDefault().getPath(outFile.getAbsolutePath()));
+		try {			
+			
+			if (outFile.getName().endsWith(".copy")) {
+				if (didUpdate || dontDelete) {				
+					Files.move(FileSystems.getDefault().getPath(outFile.getAbsolutePath()), FileSystems.getDefault().getPath(inFile.getAbsolutePath()), StandardCopyOption.REPLACE_EXISTING);
+				} else { 
+					
+					Files.delete(FileSystems.getDefault().getPath(outFile.getAbsolutePath()));
+				}
 			} else {
-				// if copy move, to original name
-				
-				if (outFile.getName().endsWith("copy"))
-					Files.move(FileSystems.getDefault().getPath(outFile.getAbsolutePath()), FileSystems.getDefault().getPath(new File(buildDir, fileName + ".properties").getAbsolutePath()), StandardCopyOption.REPLACE_EXISTING);
+				// worked on original
+				if (!didUpdate && !buildDir.equals(srcDir) && !dontDelete) {
+					
+					// no change made					
+					Files.delete(FileSystems.getDefault().getPath(outFile.getAbsolutePath()));
+				}
 			}
+				
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 		
-		return update;
+		return didUpdate;
 	}
 }
