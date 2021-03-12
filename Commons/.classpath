@@ -4,9 +4,9 @@
 	<classpathentry kind="src" path="test"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.USER_LIBRARY/log4j"/>
-	<classpathentry kind="con" path="org.eclipse.jdt.USER_LIBRARY/apache-common"/>
+	<classpathentry exported="true" kind="con" path="org.eclipse.jdt.USER_LIBRARY/apache-common"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.junit.JUNIT_CONTAINER/4"/>
-	<classpathentry kind="con" path="org.eclipse.jdt.USER_LIBRARY/wm"/>
+	<classpathentry exported="true" kind="con" path="org.eclipse.jdt.USER_LIBRARY/wm"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.USER_LIBRARY/apache-commons"/>
 	<classpathentry kind="lib" path="/Applications/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcPublicTools/code/jars/avalon-framework-api-4.3.1.jar"/>
 	<classpathentry kind="lib" path="/Applications/SoftwareAG/10.5/IntegrationServer/instances/default/packages/JcPublicTools/code/jars/avalon-framework-impl-4.3.1.jar"/>

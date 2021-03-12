@@ -1,0 +1,3 @@
+[submodule "WmRndInvokeInterceptor"]
+	path = WmRndInvokeInterceptor
+	url = https://github.com/johnpcarter/WmRndInvokeInterceptor.git
