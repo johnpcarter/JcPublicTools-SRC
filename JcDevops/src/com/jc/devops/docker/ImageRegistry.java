@@ -20,6 +20,8 @@ import com.wm.data.IDataUtil;
 
 public class ImageRegistry implements ProgressHandler {
 	
+	public static String WM_CURRENT_VERSION = "10.7";
+	
 	private DockerClient _client;
 	
 	private RegistryAuth _registry;
@@ -82,18 +84,20 @@ public class ImageRegistry implements ProgressHandler {
 			
 			List<Image> imgs = _client.listImages();
 			
-			DefaultImageChecker standard = new DefaultImageChecker("10.5");
+			DefaultImageChecker standard = new DefaultImageChecker(WM_CURRENT_VERSION);
 			final List<IData> rimages = new ArrayList<IData>();
 		
 			imgs.forEach((i) -> {
 						
 				if (i.repoTags() != null) {
-					String type = standard.check(i.repoTags().get(0));
-					if (filter == null || (i.repoTags() != null && i.repoTags().get(0).startsWith(filter))) {
-						String t  = i.repoTags().get(0);
 					
-						if (!t.endsWith(".d") && !t.contains("<none>"))
-							rimages.add(makeImageDoc(i, type));
+					if (filter == null || (i.repoTags() != null && i.repoTags().get(0).startsWith(filter))) {
+						
+						for (String t : i.repoTags()) {
+							
+							if (!t.endsWith(".d") && !t.contains("<none>"))
+								rimages.add(makeImageDoc(i, t, standard.check(t)));
+						}					
 					}
 				}
 			});
@@ -128,7 +132,7 @@ public class ImageRegistry implements ProgressHandler {
 		Image image = getImageForTag(tag);
 		
 		if (image != null)
-			return makeImageDoc(image, new DefaultImageChecker("10.5").check(tag));
+			return makeImageDoc(image, tag, new DefaultImageChecker(WM_CURRENT_VERSION).check(tag));
 		else
 			return null;
 	}
@@ -164,19 +168,15 @@ public class ImageRegistry implements ProgressHandler {
 		return image;
 	}
 	
-	private static IData makeImageDoc(Image image, String type) {
+	private static IData makeImageDoc(Image image, String tag, String type) {
 		
 		IData doc = IDataFactory.create();
 		IDataCursor c = doc.getCursor();
 		
 		IDataUtil.put(c, "id", image.id());
 		
-		String tag = null;
-		if (image.repoTags() != null && image.repoTags().size() > 0) {
-			tag = image.repoTags().get(0);
-			IDataUtil.put(c, "_repository", tag);
-			IDataUtil.put(c, "_tag", tag);
-		}
+		IDataUtil.put(c, "_repository", tag);
+		IDataUtil.put(c, "_tag", tag);
 		
 		if (image.labels() != null && image.labels().size() >  0) {
 			

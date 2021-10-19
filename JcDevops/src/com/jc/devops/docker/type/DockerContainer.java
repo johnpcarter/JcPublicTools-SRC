@@ -1,11 +1,8 @@
 package com.jc.devops.docker.type;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.jc.devops.docker.ImageRegistry;
 import com.jc.devops.docker.WebSocketContainerLogger;
@@ -15,10 +12,7 @@ import com.spotify.docker.client.messages.ContainerConfig;
 import com.spotify.docker.client.messages.ContainerCreation;
 import com.spotify.docker.client.messages.HostConfig;
 import com.spotify.docker.client.messages.PortBinding;
-import com.spotify.docker.client.messages.Volume;
-import com.spotify.docker.client.messages.HostConfig.Bind;
 import com.spotify.docker.client.messages.HostConfig.Builder;
-import com.spotify.docker.client.shaded.com.google.common.collect.ImmutableList;
 import com.wm.app.b2b.server.ServiceException;
 import com.wm.data.IData;
 import com.wm.data.IDataCursor;
@@ -82,19 +76,19 @@ public class DockerContainer {
 		IData d = IDataFactory.create();
 		IDataCursor c = d.getCursor();
 		
-		IDataUtil.put(c, "name", name);
-		IDataUtil.put(c, "image", image);
+		IDataUtil.put(c, "name", this.name);
+		IDataUtil.put(c, "image", this.image);
 		
 		if (build != null)
 			IDataUtil.put(c, "build", build.toIData());
 
-		IDataUtil.put(c, "hostname", hostname);
-		IDataUtil.put(c, "active", "" + active);
+		IDataUtil.put(c, "hostname", this.hostname);
+		IDataUtil.put(c, "active", "" + this.active);
 		IDataUtil.put(c, "type", type);
 
-		IDataUtil.put(c, "id",  id);
-		IDataUtil.put(c, "imageId",  imageId);
-		IDataUtil.put(c, "depends",  depends);
+		IDataUtil.put(c, "id",  this.id);
+		IDataUtil.put(c, "imageId",  this.imageId);
+		IDataUtil.put(c, "depends", this. depends);
 
 		IDataUtil.put(c, "readinessProbe", this.readinessProbe);
 		IDataUtil.put(c, "livenessProbe", this.livenessProbe);

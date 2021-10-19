@@ -3,6 +3,7 @@ package com.jc.devops.docker.type;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -19,7 +20,6 @@ import com.jc.devops.docker.ImageRegistry;
 import com.jc.devops.docker.WebSocketContainerLogger;
 import com.jc.devops.docker.type.Build.Image;
 import com.jc.devops.docker.type.BuildCommand.CommandType;
-import com.jc.devops.docker.type.Port;
 import com.spotify.docker.client.DockerClient;
 import com.spotify.docker.client.exceptions.DockerCertificateException;
 import com.spotify.docker.client.exceptions.DockerException;
@@ -166,16 +166,31 @@ public class Deployment {
 		return d;
 	}
 	
+	public boolean hasContainer(String containerName) {
+	
+		boolean match = false;
+		
+		for (DockerContainer c : this.containers) {
+			
+			if (c.name.equals(containerName)) {
+				match = true;
+				break;
+			}
+		}
+		
+		return match;
+	}
+	
 	/* 
 	 Updates all end-point references to containers (used in docker-compose) to instead reference k8s services 
 	 */
-	public boolean updateContainerReferences(String appPrefix, String buildDir, Deployment[] deployments, Build[] builds, String environment) {
+	public boolean updateContainerReferences(String appPrefix, String buildDir, Deployment[] deployments, Build[] builds, String environment) throws FileNotFoundException, IOException {
 			
 		boolean buildRequired = false;
 				
 		Map<String, Deployment> names = new HashMap<String, Deployment>();
 		
-		// Identify the deployment to which each container belongs
+		// build a table of all container references and their deployments names across entire project
 		
 		for (Deployment deployment : deployments) {
 						
@@ -187,14 +202,16 @@ public class Deployment {
 			}
 		}
 		
-		// loop over containers, swapping out their references to other containers with correct deployment service
+		// loop over containers in this deployment, swapping out their references to containers that are in other deployments
+		// i.e. must reference their service name in k8s NOT host
 		
 		for (DockerContainer c: this.containers) {
 							
 			Environment env = c.getEnvironment(environment);
 			
 			if (c.active) {
-								
+						
+				// check for any 
 				for (String containerName : names.keySet()) {
 					
 					// check env vars
@@ -227,6 +244,7 @@ public class Deployment {
 					// Do we have a properties file in the underlying image that needs updating ?
 					
 					if (!propsFileProcessed && builds != null) {
+						
 						for (Build b: builds) {
 							
 							// find build for container
@@ -254,6 +272,8 @@ public class Deployment {
 										}
 									}
 								}
+								
+								break;
 							}
 						}
 					}
@@ -266,7 +286,7 @@ public class Deployment {
 					c.build.sourceImage = new Image(c.image);
 
 					if (buildRequired) {
-						c.image = c.image + "." + environment == null ? "p" : environment;
+						c.image = c.build.targetImage.tag;
 					} 	
 				}
 			}
@@ -276,7 +296,7 @@ public class Deployment {
 		return buildRequired;
 	}
 	
-	private boolean addUpdatedPropertiesFileToBuild(DockerContainer c, BuildCommand bc, String buildDir, String appPrefix, String containerName, Map<String, Deployment> names, String environment) {
+	private boolean addUpdatedPropertiesFileToBuild(DockerContainer c, BuildCommand bc, String buildDir, String appPrefix, String containerName, Map<String, Deployment> names, String environment) throws FileNotFoundException, IOException {
 		
 		Build build = null;
 		
@@ -309,7 +329,7 @@ public class Deployment {
 	
 	private String replacement(String containerNameToReplace, String appPrefix, Deployment deployment, DockerContainer c, Arg arg, String environment) {
 		
-		if (deployment.name.equals(this.name) && (arg == null || !(arg.source.equals("api_server_url") && c.type.equals("msr")))) {
+		if (deployment.name.equals(this.name) && this.hasContainer(containerNameToReplace)) {
 			//container is referenced in same host, so we can simply replace it with localhost
 
 			return "localhost";
@@ -322,13 +342,13 @@ public class Deployment {
 			
 			String serviceType = "clusterip";
 			
-			for (DockerContainer dc : deployment.containers) {
+			/*for (DockerContainer dc : deployment.containers) {
 				
-				Environment env = c.getEnvironment(environment);
+				Environment env = dc.getEnvironment(environment);
 				
-				if (dc.name.equals(containerNameToReplace)) {
+				if (arg != null && dc.name.equals(containerNameToReplace)) {
 					for (Port p : env.ports) {
-						if (arg != null && arg.target.contains(":" + p.internal)) {
+						if (arg.target.contains(":" + p.internal)) {
 							serviceType = p.serviceType.toLowerCase();
 							break;
 						}
@@ -343,12 +363,12 @@ public class Deployment {
 					} else if (serviceType.equals("ingress")) {
 						// use internal service, never external
 						serviceType = "clusterip";
-					}*/
+					}*
 					
 						
 					break;
 				}
-			}
+			}*/
 			
 			String txt = serviceType + "-" + deployment.name.toLowerCase().replace(" ", "-");
 		
@@ -567,7 +587,7 @@ public class Deployment {
 		return done;
 	}
 	
-	private boolean updatePropertyFileForReferences(String srcDir, String buildDir, String fileName, String ref, String newRef, String suffix) {
+	private boolean updatePropertyFileForReferences(String srcDir, String buildDir, String fileName, String ref, String newRef, String suffix) throws FileNotFoundException, IOException {
 				
 		boolean didUpdate = false;
 		File outDir = buildDir.endsWith("/resources") ? new File(buildDir) : new File(buildDir, "resources");		
@@ -605,7 +625,7 @@ public class Deployment {
 					if (value.contains(ref)) {
 						line = key + "=" + value.replace(ref, newRef);
 						
-						if (!newRef.endsWith(suffix)) {
+						if (suffix != null && !newRef.endsWith(suffix)) {
 							line += "-" + suffix;
 						}
 						didUpdate = true;
@@ -624,30 +644,21 @@ public class Deployment {
 				wrt.write(line);
 				wrt.newLine();
 			}
-		} catch (IOException e) {
-			e.printStackTrace();
 		}
 		
-		try {			
-			
-			if (outFile.getName().endsWith(".copy")) {
-				if (didUpdate || dontDelete) {				
-					Files.move(FileSystems.getDefault().getPath(outFile.getAbsolutePath()), FileSystems.getDefault().getPath(inFile.getAbsolutePath()), StandardCopyOption.REPLACE_EXISTING);
-				} else { 
-					
-					Files.delete(FileSystems.getDefault().getPath(outFile.getAbsolutePath()));
-				}
-			} else {
-				// worked on original
-				if (!didUpdate && !buildDir.equals(srcDir) && !dontDelete) {
-					
-					// no change made					
-					Files.delete(FileSystems.getDefault().getPath(outFile.getAbsolutePath()));
-				}
+		if (outFile.getName().endsWith(".copy")) {
+			if (didUpdate) {				
+				Files.move(FileSystems.getDefault().getPath(outFile.getAbsolutePath()), FileSystems.getDefault().getPath(inFile.getAbsolutePath()), StandardCopyOption.REPLACE_EXISTING);
+			} else { 
+				Files.delete(FileSystems.getDefault().getPath(outFile.getAbsolutePath()));
 			}
-				
-		} catch (IOException e) {
-			e.printStackTrace();
+		} else {
+				// worked on original
+			if (!didUpdate && !buildDir.equals(srcDir) && !dontDelete) {
+					
+				// no change made					
+				Files.delete(FileSystems.getDefault().getPath(outFile.getAbsolutePath()));
+			}
 		}
 		
 		return didUpdate;

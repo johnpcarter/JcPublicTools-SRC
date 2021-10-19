@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<jardesc>
+    <jar path="/Applications/SoftwareAG/10.7/IntegrationServer/instances/default/packages/WxCyberark/code/jars/static/credentials-invoke-injector.jar"/>
+    <options buildIfNeeded="true" compress="false" descriptionLocation="/JcCredentialsInjector/exportJarToWm.jardesc" exportErrors="true" exportWarnings="true" includeDirectoryEntries="false" overwrite="false" saveDescription="true" storeRefactorings="false" useSourceFolders="false"/>
+    <storedRefactorings deprecationInfo="true" structuralOnly="false"/>
+    <selectedProjects/>
+    <manifest generateManifest="true" manifestLocation="" manifestVersion="1.0" reuseManifest="false" saveManifest="false" usesManifest="true">
+        <sealing sealJar="false">
+            <packagesToSeal/>
+            <packagesToUnSeal/>
+        </sealing>
+    </manifest>
+    <selectedElements exportClassFiles="true" exportJavaFiles="false" exportOutputFolder="false">
+        <javaElement handleIdentifier="=JcCredentialsInjector/src"/>
+        <file path="/JcCredentialsInjector/.classpath"/>
+        <file path="/JcCredentialsInjector/.project"/>
+    </selectedElements>
+</jardesc>

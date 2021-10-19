@@ -1,7 +1,5 @@
 package com.jc.devops.docker.type;
 
-import java.util.ArrayList;
-import java.util.List;
 
 import com.wm.data.IData;
 import com.wm.data.IDataCursor;
