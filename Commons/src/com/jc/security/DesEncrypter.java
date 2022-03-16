@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.UnsupportedEncodingException;
+import java.util.Base64;
 
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
@@ -25,29 +26,19 @@ public class DesEncrypter
 			if (secretKey == null)
 				_key = KeyGenerator.getInstance("DES").generateKey();
 			else
-				_key = deserializeSecretKey(new sun.misc.BASE64Decoder().decodeBuffer(secretKey));
+				_key = deserializeSecretKey(Base64.getDecoder().decode(secretKey));
 			
 			_ecipher = Cipher.getInstance("DES");
 			_decipher = Cipher.getInstance("DES");
             _ecipher.init(Cipher.ENCRYPT_MODE, _key);
             _decipher.init(Cipher.DECRYPT_MODE, _key);
-        } 
-		catch (javax.crypto.NoSuchPaddingException e) 
-		{
+        } catch (javax.crypto.NoSuchPaddingException e) {
 			throw new DesEncrypterException(e);
-        }
-		catch (java.security.NoSuchAlgorithmException e) 
-        {
+        } catch (java.security.NoSuchAlgorithmException e) {
 			throw new DesEncrypterException(e);
-        } 
-		catch (java.security.InvalidKeyException e) 
-        {
+        } catch (java.security.InvalidKeyException e) {
 			throw new InvalidSecretKeyException(e);
         } 
-		catch (IOException e) 
-        {
-        	throw new InvalidSecretKeyException(e);
-		}
 	}
 	
 	public DesEncrypter() throws InvalidSecretKeyException, DesEncrypterException
@@ -57,7 +48,7 @@ public class DesEncrypter
 	
 	public String getSecretKey() throws InvalidSecretKeyException
 	{
-		String encodedSecretKey = new sun.misc.BASE64Encoder().encode(serializeSecretKey(_key));
+		String encodedSecretKey = Base64.getEncoder().encodeToString(serializeSecretKey(_key));
 		encodedSecretKey = encodedSecretKey.replaceAll("\n", ""); // Base64Encoder adds a new line if we go over 76 characters, which is not allowed in properties
 		
 		return encodedSecretKey;
@@ -70,7 +61,7 @@ public class DesEncrypter
     		byte[] utf8 = str.getBytes("UTF8");
             byte[] enc = _ecipher.doFinal(utf8);
 
-            return new sun.misc.BASE64Encoder().encode(enc);
+            return Base64.getEncoder().encodeToString(enc);
         } 
         catch (javax.crypto.BadPaddingException e) 
         {
@@ -90,7 +81,7 @@ public class DesEncrypter
     {
         try 
         {
-            byte[] dec = new sun.misc.BASE64Decoder().decodeBuffer(str);
+            byte[] dec = Base64.getDecoder().decode(str);
             byte[] utf8 = _decipher.doFinal(dec);
 
             // Decode using utf-8
@@ -107,11 +98,7 @@ public class DesEncrypter
         catch (UnsupportedEncodingException e) 
         {
 			throw new DesEncrypterException(e);
-        } 
-        catch (java.io.IOException e) 
-        {
-			throw new DesEncrypterException(e);
-        }        
+        }       
 	}
     
     private byte[] serializeSecretKey(SecretKey key) throws InvalidSecretKeyException

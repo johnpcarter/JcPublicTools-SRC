@@ -1,14 +1,13 @@
 package com.jc.devops.docker;
 
-import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 import com.spotify.docker.client.DockerClient;
 import com.spotify.docker.client.DockerClient.AttachParameter;
 import com.spotify.docker.client.LogStream;
-import com.spotify.docker.client.exceptions.DockerException;
 import com.wm.app.b2b.server.ServiceException;
 import com.wm.app.b2b.server.UnknownServiceException;
 import com.wm.data.IData;
@@ -21,19 +20,24 @@ public class WebSocketContainerLogger extends OutputStream {
 	public static final String NEW_LINE = System.getProperty("line.separator");		
 	
 	private static WebSocketContainerLogger _default;
-	
+		
 	private  String _sessionId;
 	private StringBuilder _bufferedText;
-	private LogStream _stream;
 	
 	private static List<String> _unsent = new ArrayList<String>();
 	
+	private StreamReader _runner = null;
+	
+	private long _start = 0;
+	private long _defer = 0;
+	
 	public static WebSocketContainerLogger defaultInstance(String sessionId) {
 		
-		if (_default == null)
-			_default = new WebSocketContainerLogger(sessionId, _unsent);
-		else
+		 if (_default == null) {
+			_default = new WebSocketContainerLogger(sessionId, _unsent); 
+		} else {
 			_default._sessionId = sessionId;
+		}
 		
 		return _default;
 	}
@@ -52,7 +56,7 @@ public class WebSocketContainerLogger extends OutputStream {
 	public static void detachDefaultInstance() {
 		
 		if (_default != null) {
-			_default.removeContainerOutput();
+			_default.close();
 		}
 	}
 
@@ -66,56 +70,67 @@ public class WebSocketContainerLogger extends OutputStream {
 		messagesToSend.clear();
 	}
 	
-	public void attachContainerOutput(DockerClient client, String containerId) throws ServiceException {
-		
-		_bufferedText = new StringBuilder();
-					
-		try {
-		  
-			_stream = client.attachContainer(containerId,
-				      AttachParameter.LOGS, AttachParameter.STDOUT,
-				      AttachParameter.STDERR, AttachParameter.STREAM);
-				      
-			_stream.attach(this, this);
-		  
-		} catch (DockerException e) {
-			throw new ServiceException(e);
-		} catch (InterruptedException e) {
-			throw new ServiceException(e);
-
-		} catch (IOException e) {
-			throw new ServiceException(e);
-		}
-	}
-
 	@Override
 	protected void finalize() throws Throwable {
 		
-		if (_stream != null)
-			removeContainerOutput();
-		
-		super.finalize();
+		this.close();
 	}
 	
-	public void removeContainerOutput() {
-		_stream.close();
-		_stream = null;
+	public synchronized void attachContainerOutput(DockerClient client, String containerId, long deferPeriod) throws ServiceException {
+		
+		_start = new Date().getTime();
+		_defer = deferPeriod;
+		_bufferedText = new StringBuilder();
+				
+		System.out.println("** BEGIN ** - Connection session " + containerId);
+		
+		if (_runner != null) {
+			_runner.close();
+		}
+			 
+		_runner = new StreamReader(client, containerId);
+		
+		Thread t = new Thread(_runner, "com.jc.devops.docker.WebSocketContainerLogger.attach#" + containerId);
+		t.setDaemon(true);
+				
+		t.start();
+	}
+	
+	public synchronized void close() {
+
+		if (_runner != null) {
+			_runner.close();
+			_runner = null;
+		}
 	}
 	
 	@Override
 	 public void write(int b) {
-	     int[] bytes = {b};
-	     write(bytes, 0, bytes.length);
+		
+		// avoid sending to many log messages from container by specifying a period from the start that we won't log from
+		
+		if (_defer == -1 || new Date().getTime() - _start > _defer) {
+			_defer = -1;
+			
+			int[] bytes = {b};
+	     	write(bytes, 0, bytes.length);
+		}
 	 }
 
 	 public void write(int[] bytes, int offset, int length) {
-	     String s = new String(bytes, offset, length);
-	     _bufferedText.append(s);
+		 
+		 try {
+			 String s = new String(bytes, offset, length);
+			 _bufferedText.append(s);
 	     	
-	     if (_bufferedText.indexOf(NEW_LINE) != -1) {
-	    	 logToWebSocket(_bufferedText.toString(), _sessionId);
-	    	 _bufferedText = new StringBuilder();
-	      }
+			 if (_bufferedText.indexOf(NEW_LINE) != -1) {
+				 logToWebSocket(_bufferedText.toString(), _sessionId);
+				 _bufferedText = new StringBuilder();
+			 }
+		 } catch(Exception e) {
+			 System.out.println("write failed! " + bytes.length + ", offset: " + offset + ", length: " + length);
+	    	 e.printStackTrace();
+	     }
 	 }
 	 
 	 public void logToWebSocket(String message) {
@@ -144,6 +159,96 @@ public class WebSocketContainerLogger extends OutputStream {
 		} catch (ServiceException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
+		}
+	}
+	 
+	private void stop(String sessionId) {
+		
+		if (sessionId == null)
+			return;
+		
+		System.out.println("stopping");
+		
+		// input
+		IData input = IDataFactory.create();
+		IDataCursor inputCursor = input.getCursor();
+		IDataUtil.put(inputCursor, "sessionId", sessionId);
+		inputCursor.destroy();
+	
+		try {
+			com.jc.wm.util.ServiceUtils.invokeService(input, "pub.websocket:disconnect", true);
+		} catch (UnknownServiceException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (ServiceException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+	
+	private class StreamReader implements Runnable {
+
+		public Exception lastError = null;
+
+		private DockerClient _client;
+		private String _containerId;
+		
+		private LogStream _stream;
+		private boolean _stop = false;
+		
+		StreamReader(DockerClient client, String containerId) {
+			
+			_client = client;
+			_containerId = containerId;
+		}
+		
+		@Override
+		public void run() {
+				
+			while (!_stop) {
+				try {
+					System.out.println("**START** - Attaching to docker container");
+					
+					_stream = _client.attachContainer(_containerId,
+							      AttachParameter.LOGS, 
+							      AttachParameter.STDOUT,
+							      AttachParameter.STDERR, 
+							      AttachParameter.STREAM);
+						
+					_stream.attach(WebSocketContainerLogger.this, WebSocketContainerLogger.this);
+					
+					System.out.println("**END** - Attaching to docker container");
+
+				} catch (Exception e) {
+					lastError = e;
+					e.printStackTrace();
+				}
+			}
+			
+			System.out.println("**DONZ** -");
+		}
+		
+		
+		public synchronized void close() {
+
+			_stop = true;
+			
+			new Thread(new Runnable() {
+				
+				@Override
+				public void run() {
+					System.out.println("**START** - detaching from docker container");
+
+					_client.close();
+					
+					System.out.println("**MIDDLE** - banz");
+					
+					_stream.close(); // this can hang
+					
+					System.out.println("**ENDZ** - detaching from docker container");
+					
+				}
+			}, "com.jc.devops.docker.WebSocketContainerLogger.close()#" + _containerId).start();
 		}
 	}
 }

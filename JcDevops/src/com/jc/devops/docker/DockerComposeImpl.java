@@ -20,7 +20,7 @@ public class DockerComposeImpl {
 	public Deployment[] services;
 	private Map<String, DockerClient> _dockerClients = new HashMap<String, DockerClient>();
 
-	public DockerComposeImpl(String dockerHost, String dockerCert, IData doc, String stageName) {
+	public DockerComposeImpl(String dockerHost, String dockerCert, IData doc, String stageName, String dirForPropertiesFiles) {
 		
 		IDataCursor c = doc.getCursor();
 		if (IDataUtil.getString(c, "name") != null)
@@ -36,7 +36,7 @@ public class DockerComposeImpl {
 			this.services = new Deployment[svcs.length];
 		
 			for (int i=0; i < svcs.length; i++) {
-				this.services[i] = new Deployment(dockerHost, dockerCert, svcs[i]);
+				this.services[i] = new Deployment(dockerHost, dockerCert, svcs[i], dirForPropertiesFiles);
 			}	
 		} else {
 			WebSocketContainerLogger.log("You haven't defined any services!");

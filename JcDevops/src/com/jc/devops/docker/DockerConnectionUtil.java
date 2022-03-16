@@ -19,9 +19,7 @@ public class DockerConnectionUtil {
 		//return new DefaultDockerClient("unix:///var/run/docker.sock");
 		
 		if (dockerHost == null || dockerHost.equals("") || dockerHost.equals("null") || dockerHost.equals(":null")) {
-					
-			System.out.println("default socket connection");
-			
+								
 			return DefaultDockerClient.fromEnv().build();
 			
 		} else if (httpsCertificate != null && !httpsCertificate.equals("null")) {

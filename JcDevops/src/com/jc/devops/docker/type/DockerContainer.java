@@ -161,9 +161,11 @@ public class DockerContainer {
 		    .env(envList).build();
 
 		ContainerCreation creation = dockerClient.createContainer(containerConfig, this.name);
-	
+			
 		this.id = creation.id();
-		
+	
+		WebSocketContainerLogger.log("Container created with id " + this.id);
+
 		return id;
 	}
 	

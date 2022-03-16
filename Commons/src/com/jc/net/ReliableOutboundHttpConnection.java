@@ -12,14 +12,13 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 import org.apache.log4j.Logger;
-
-import sun.misc.BASE64Encoder;
 
 public class ReliableOutboundHttpConnection 
 {
@@ -231,7 +230,7 @@ public class ReliableOutboundHttpConnection
 		if (_login != null)
 		{
 			String authStr = _login + ":" + _password;
-			String encodedLogin = new BASE64Encoder().encodeBuffer(authStr.getBytes());	//TODO: replace with Apache commons
+			String encodedLogin = Base64.getEncoder().encodeToString(authStr.getBytes());	//TODO: replace with Apache commons
 			encodedLogin = encodedLogin.replaceAll("\n", ""); // Base64Encoder adds a new line if we go over 76 characters, which is not allowed in properties
 			conn.setRequestProperty("Authorization", "Basic " + encodedLogin);
 		}

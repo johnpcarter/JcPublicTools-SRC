@@ -2,11 +2,9 @@ package com.jc.wm.introspection;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 import com.wm.app.b2b.client.ServiceException;
 import com.wm.app.b2b.server.ServerAPI;
@@ -14,39 +12,35 @@ import com.wm.data.IData;
 
 public class PackageIntrospector {
 
-	private static PackageIntrospector _default;
 	private static Map<String, PackageIntrospector> _sources =  new HashMap<String, PackageIntrospector>();
 	
 	private  Map<String, PackageInfo> _packages = new HashMap<String, PackageInfo>();
 
-	public static PackageIntrospector defaultInstance(boolean reload) {
-		
-		if (_default == null || reload)
-			_default = new PackageIntrospector("./packages", "^(?!Wm).*");
-		
-		return _default;
-	}
 	
-	public static boolean haveInstance(String baseDir) {
+	public static boolean haveInstance(String name) {
 		
-		return _sources.get(baseDir) !=  null;
+		return _sources.get(name) !=  null;
 	}
 
-	public static PackageIntrospector defaultInstance(String baseDir, boolean reload) {
+	public static PackageIntrospector defaultInstance(String name) {
+		return _sources.get(name);
+	}
+	
+	public static PackageIntrospector defaultInstance(String name, String baseDir, Map<String, String> repositories, boolean reload) {
 		
-		PackageIntrospector p = _sources.get(baseDir == null ? "./packages" : baseDir);
+		PackageIntrospector p = _sources.get(name == null ? "default" : name);
 		
 		if (p == null || reload) {
-			p = new PackageIntrospector(baseDir, "^(?!Wm).*");
-			_sources.put(baseDir, p);
+			p = new PackageIntrospector(baseDir, "^(?!Wm).*", repositories);
+			_sources.put(name, p);
 		}
 		
 		return p;
 	}
 	
-	public PackageIntrospector(String baseDir, String excludePattern) {
+	public PackageIntrospector(String baseDir, String excludePattern, Map<String, String> repositories) {
 		
-		this.scan(baseDir, new File(baseDir).list(), excludePattern);
+		this.scan(baseDir, repositories, excludePattern);
 	}
 	
 	public String[] packages() {
@@ -181,22 +175,40 @@ public class PackageIntrospector {
 		return results;
 	}
 	
-	private void scan(String rootDir, String[] packages, String excludePattern) {
+	private void scan(String rootDir, Map<String, String> repositories, String excludePattern) {
+	
+		if (repositories == null || repositories.size() == 0) {
+			repositories = new HashMap<String, String>();
+			repositories.put("default", "-");
+		}
 		
-		if (packages == null)
-			return;
-		
-		for (int i =  0;  i < packages.length; i++) {
+		for(String repo : repositories.keySet()) {
 			
-			try {
-				if (!packages[i].equals("Default") && (excludePattern == null || packages[i].matches(excludePattern)))
-					
-					if (new File(rootDir, packages[i]).isDirectory())
-						_packages.put(packages[i], new PackageInfo(packages[i], new File(rootDir).getAbsolutePath()));
+			String[] packages = new String[1];
+
+			File baseDir = new File(rootDir);
+			
+			if (repositories.get(repo).equals("-")) {
 				
-			} catch (ServiceException e) {
-				ServerAPI.logError(new ServiceException("Cannot introspect package " + packages[i] + " due to exception: " + e.getLocalizedMessage()));
+				// no repo, directory is the package dir
+				
+					packages = baseDir.list();
+				
+			} else if (!repositories.get(repo).equals(".")) {
+				
+				// repo based sub-directory, so we need to add repo into path as well the path into the packages folder indicated for repo
+				
+					baseDir = new File(new File(baseDir, repo), repositories.get(repo));
+				
+					packages = baseDir.list();
+			} else { 
+				
+				// directory is a single package
+				
+				packages[0] = repo;
 			}
+			
+			this.scanRepoDir(repo, baseDir, packages, excludePattern);
 		}
 		
 		// now index each package
@@ -204,5 +216,24 @@ public class PackageIntrospector {
 		this._packages.values().forEach((p) -> {
 			p.index(_packages);
 		});
+	}
+	
+	private void scanRepoDir(String repo, File rootDir, String[] packages, String excludePattern) {
+		
+		if (packages == null)
+			return;
+		
+		for (int i = 0; i < packages.length; i++) {
+			
+			try {
+				if (!packages[i].equals("Default") && (excludePattern == null || packages[i].matches(excludePattern)))
+					
+					if (new File(rootDir, packages[i]).isDirectory())
+						_packages.put(packages[i], new PackageInfo(repo, packages[i], rootDir.getAbsolutePath()));
+				
+			} catch (ServiceException e) {
+				ServerAPI.logError(new ServiceException("Cannot introspect package " + packages[i] + " due to exception: " + e.getLocalizedMessage()));
+			}
+		}
 	}
 }

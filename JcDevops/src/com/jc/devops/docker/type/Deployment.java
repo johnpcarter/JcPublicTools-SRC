@@ -58,13 +58,16 @@ public class Deployment {
 	private List<WakerDelegate> _wakers = new ArrayList<WakerDelegate>();
 	private Runnable _runner;
 
+	private String _homeDirForPropertiesFiles = "./packages/JcDevopsConsole/resources/files/properties";
+	
 	public interface WakerDelegate {
 		public void deploymentsIsReader(Deployment deployment);
 	}
 	
-	public Deployment(String dockerHost, String dockerCert, IData doc) {
+	public Deployment(String dockerHost, String dockerCert, IData doc, String dirForPropertiesFiles) {
 		
-		this(doc);
+		this(doc, dirForPropertiesFiles);
+		
 		this._defaultDockerHost = dockerHost;
 		this._defaultDockerCert =  dockerCert;
 		
@@ -72,7 +75,9 @@ public class Deployment {
 			this._defaultDockerHost = this.hostName;
 	}
 	
-	public Deployment(IData doc) {
+	public Deployment(IData doc, String dirForPropertiesFiles) {
+		
+		_homeDirForPropertiesFiles = dirForPropertiesFiles;
 		
 		IDataCursor c = doc.getCursor();
 		this.name = IDataUtil.getString(c, "name");
@@ -301,7 +306,7 @@ public class Deployment {
 		Build build = null;
 		
 		if (c.build == null) {
-			build = new Build(new Build.Image(c.image), new Build.Image(c.image + ".d"));
+			build = new Build(new Build.Image(c.image), new Build.Image((c.image.endsWith(".d") || c.image.endsWith(".d.k8s"))? c.image : c.image + ".d"));
 		} else {
 			build = c.build;
 		}
@@ -312,7 +317,7 @@ public class Deployment {
 			cmd = new BuildCommand(CommandType.file, "properties", bc.source, bc.target);
 		}
 				
-		if (updatePropertyFileForReferences("packages/JcDevopsConsole/resources/files/properties", buildDir, bc.source, containerName, replacement(containerName, appPrefix, names.get(containerName), c, null, environment), names.get(containerName).version)) {
+		if (updatePropertyFileForReferences(_homeDirForPropertiesFiles, buildDir, bc.source, containerName, replacement(containerName, appPrefix, names.get(containerName), c, null, environment), names.get(containerName).version)) {
 			
 			// only record it, if we did make a change
 			
@@ -422,7 +427,7 @@ public class Deployment {
 					
 					if (containers != null || this.containers[i].active) {
 						
-						WebSocketContainerLogger.log("Starting Container '" + this.containers[i].name + "'");
+						WebSocketContainerLogger.log("Starting Container '" + this.containers[i].name + "' in " + composeName);
 						
 						this.containers[i].createContainer(dockerClient, buildno, composeName, environment);
 

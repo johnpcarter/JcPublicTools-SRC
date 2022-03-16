@@ -21,11 +21,12 @@ public class DefaultImageChecker {
 	public DefaultImageChecker(String version) {
 		
 		this._version = version;
-		this._default.put("store/softwareag/webmethods-microservicesruntime:" + version, "msr");
-		this._default.put("store/softwareag/apigateway-trial:" + version, "apigw");
-		this._default.put("store/softwareag/microgateway-trial:" + version, "apimg");
-		this._default.put("store/softwareag/universalmessaging-server:" + version, "um");
-		this._default.put("store/softwareag/terracotta-server:" + version, "tcs");
+		this._default.put("softwareag/webmethods-microservicesruntime:" + version + ".0.0", "msr");
+		this._default.put("softwareag/webmethods-microservicesruntime:" + version + ".0.0-slim", "msr-slim");
+		this._default.put("softwareag/webmethods-microservicesruntime:" + version + ".0.0-ubi", "msr-ubi");
+		this._default.put("softwareag/apigateway-trial:" + version, "apigw");
+		this._default.put("softwareag/microgateway-trial:" + version, "apimg");
+		this._default.put("softwareag/universalmessaging-server:" + version, "um");
 	}
 	
 	public String check(String tag) {

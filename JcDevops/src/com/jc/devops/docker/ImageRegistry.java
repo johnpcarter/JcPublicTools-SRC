@@ -20,7 +20,7 @@ import com.wm.data.IDataUtil;
 
 public class ImageRegistry implements ProgressHandler {
 	
-	public static String WM_CURRENT_VERSION = "10.7";
+	public static String WM_CURRENT_VERSION = "10.11";
 	
 	private DockerClient _client;
 	
@@ -37,6 +37,16 @@ public class ImageRegistry implements ProgressHandler {
 		return _default;
 	}
 	
+	public ImageRegistry(DockerClient client, String registryUser, String registryPassword) {
+		
+		this._client = client;
+		
+		this._registry = RegistryAuth.builder()
+				  .username(registryUser)
+				  .password(registryPassword)
+				  .build();
+	}
+
 	public ImageRegistry(DockerClient client, String registryEmailAddress, String registryUser, String registryPassword) {
 		
 		this._client = client;
@@ -91,7 +101,7 @@ public class ImageRegistry implements ProgressHandler {
 						
 				if (i.repoTags() != null) {
 					
-					if (filter == null || (i.repoTags() != null && i.repoTags().get(0).startsWith(filter))) {
+					if (filter == null || (i.repoTags() != null && matches(i.repoTags().get(0), filter))) {
 						
 						for (String t : i.repoTags()) {
 							
@@ -145,11 +155,8 @@ public class ImageRegistry implements ProgressHandler {
 	
 	public static boolean isVersion(String v) {
 		
-		return v.equals("latest") || v.equals("lts") 
+		return v.equals("latest") || v.equals("lts") || v.matches("[0-9]")
 				|| v.matches("^(v|V|)([0-9]{1,4}(\\.[0-9a-z]{1,6}){1,5})");
-				//|| v.matches("^(v|V|)\\d{1,3}(?:\\.\\d{1,6})(?:\\.\\d{1,6})(?:\\\\.\\\\d{1,6})?$")
-				//|| v.matches("^(v|V|)\\d{1,3}\\_\\d{1,3}(?:\\_\\d{1,6})(?:\\\\_\\\\d{1,6})?$")
-				//;
 	}
 	
 	private Image getImageForTag(String tag) throws DockerException, InterruptedException {
@@ -247,12 +254,29 @@ public class ImageRegistry implements ProgressHandler {
 
 				int s = after.lastIndexOf("-");
 
-				if (s != -1 && isVersion(after.substring(s+1))) {
-					IDataUtil.put(c, "_name", after.substring(0, s));
-					IDataUtil.put(c, "_version", after.substring(s+1));
+				if (s != -1) {
+										
+					if (isVersion(after.substring(s+1))) {
+						IDataUtil.put(c, "_name", after.substring(0, s));
+						IDataUtil.put(c, "_version", after.substring(s+1));
+					} else if (isVersion(after.substring(0, s))) {
+						
+						// this probably implies that the name is in the repo
+						
+						IDataUtil.put(c,  "_version", after.substring(0, s));
+						
+						if (before.indexOf("/") != -1) {
+							IDataUtil.put(c, "_name", before.substring(before.lastIndexOf("/")+1) + after.substring(s));
+						} else {
+							IDataUtil.put(c, "_name", before + after.substring(s));
+						}
+					} else {
+						IDataUtil.put(c, "_name", after);
+					}
 				} else {
 					IDataUtil.put(c, "_name", after);
 				}
+				
 			}
 		}
 		
@@ -268,5 +292,26 @@ public class ImageRegistry implements ProgressHandler {
 	private static String formatDate(Date date) {
 		
 		return new SimpleDateFormat("dd MMM yy - HH:mm").format(date);
+	}
+	
+	private boolean matches(String value, String filter) {
+		
+		if (filter.endsWith("*")) {
+			if (filter.length() == 1) {
+				return true; // only have wildcard, so assume wants all
+			} else {
+				return value.startsWith(filter.substring(0, filter.length()-1));
+			}
+		} else {
+			
+			// absolute match, but remove versioning from tag 
+			String rest = value.length() > filter.length() ? value.substring(value.indexOf(filter)+filter.length()+1) : null;
+			
+			if (rest != null && isVersion(rest)) {
+				return value.startsWith(filter);
+			} else {
+				return value.equals(filter);
+			}
+		}
 	}
 }

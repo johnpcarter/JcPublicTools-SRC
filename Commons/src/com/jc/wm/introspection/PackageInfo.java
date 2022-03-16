@@ -42,18 +42,23 @@ public class PackageInfo {
 	private String _shutdown;
 	private String _build;
 	private boolean _isSystem;
+	private String[] _requires;
+	
 	private TestStatus _testStatus;
 	
 	private Map<String, ServiceInfo> _services = new HashMap<String, ServiceInfo>();
 	private Map<String, APIInfo> _apis = new HashMap<String, APIInfo>();
  
+	private String _repository;
+	
 	public PackageInfo(String name) {
 		this._name = name;
 	}
 		
-	public PackageInfo(String name, String baseDir) throws ServiceException {
+	public PackageInfo(String repository, String name, String baseDir) throws ServiceException {
 		
 		this._name = name;
+		this._repository = repository;
 		this.recordServices(baseDir);
 							
 		if (new File(new File(new File(baseDir, name), "resources"), "test-suite.json").exists()) {
@@ -85,6 +90,25 @@ public class PackageInfo {
 		         this._build = IDataUtil.getString(c, "build");
 		         this._description = IDataUtil.getString(c, "description");
 		         this._isSystem = IDataUtil.getString(c, "system_package").equals("yes") ? true : false;
+		         
+		         IData requires = IDataUtil.getIData(c, "requires");
+		         
+		         if (requires != null) {
+		        	 ArrayList<String> reqList = new ArrayList<String>();
+		        	 IDataCursor rc = requires.getCursor();
+		        	 rc.first();
+		        	 
+		        	 do {
+		        		 String key = rc.getKey(); // package name
+		        		 Object val = rc.getValue(); // version (not used today)
+		        		 reqList.add(key);
+		        		 
+		        		 rc.next();
+		        	 } while(rc.hasMoreData());
+		        		 
+		        	 rc.destroy();
+		        	 this._requires = reqList.toArray(new String[reqList.size()]);
+		         }
 
 		         c.destroy();
 	         } else {
@@ -134,6 +158,18 @@ public class PackageInfo {
 		return _services.get(name);
 	}
 	
+	public String getRepository() {
+		return _repository;
+	}
+	
+	public void setRepository(String repository) {
+		_repository = repository;
+	}
+	
+	public String[] getRequiredPackages() {
+		return _requires;
+	}
+	
 	public IData toIData(boolean includeServices, boolean includeRequires, List<PackageInfo> exclude) {
 		
 		IData[] apisDocArray = new IData[_apis.size()];
@@ -168,20 +204,11 @@ public class PackageInfo {
 			IDataUtil.put(c, "services", servicesDocArray);
 
 		if (includeRequires) {
-			List<PackageInfo> depends = this.getDependencies();
-			IData[] requiresDocArray = new IData[depends.size()];
-			Iterator<PackageInfo> dependsIterator = depends.iterator();
-			
-			i = 0 ;
-			while(dependsIterator.hasNext()) {
-				PackageInfo next = dependsIterator.next();
-				if (exclude == null || !exclude.contains(next))
-					requiresDocArray[i++] = next.toIData(false, false, exclude);
-			}
-			
-			IDataUtil.put(c, "requires", requiresDocArray);
+			IDataUtil.put(c, "requires", buildRequiredPackages(exclude));
 		}
-		
+
+		IDataUtil.put(c, "repository", _repository);
+
 		c.destroy();
 		
 		return d;
@@ -209,6 +236,15 @@ public class PackageInfo {
 			
 			svc.getDependencies(pckgs, excludePackages);
 		});
+		
+		if (this._requires != null) {
+			for(String p : this._requires) {
+				PackageInfo pi = new PackageInfo(p);
+				
+				if (!pckgs.contains(pi))
+					pckgs.add(pi);
+			}
+		}
 	}
 	
 	public void index(Map<String, PackageInfo> packages) {
@@ -220,6 +256,30 @@ public class PackageInfo {
 			if (!svc.isIndexed())
 				svc.index(packages);
 		});
+	}
+	
+	private IData[] buildRequiredPackages(List<PackageInfo> exclude) {
+	
+		List<PackageInfo> depends = this.getDependencies();
+		ArrayList<IData> requiresDocArray = new ArrayList<IData>();
+		Iterator<PackageInfo> dependsIterator = depends.iterator();
+		
+		while(dependsIterator.hasNext()) {
+			PackageInfo next = dependsIterator.next();
+			if (exclude == null || !exclude.contains(next))
+				requiresDocArray.add(next.toIData(false, false, exclude));
+		}
+		
+		if (this._requires != null) {
+			for(String p : this._requires) {
+				PackageInfo pi = new PackageInfo(p);
+				
+				if (!depends.contains(pi))
+					requiresDocArray.add(pi.toIData(false, false, exclude));
+			}
+		}
+		
+		return requiresDocArray.toArray(new IData[requiresDocArray.size()]);
 	}
 	
 	private void recordServices(String baseDir) throws ServiceException {
