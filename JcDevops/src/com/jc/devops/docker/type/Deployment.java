@@ -58,7 +58,7 @@ public class Deployment {
 	private List<WakerDelegate> _wakers = new ArrayList<WakerDelegate>();
 	private Runnable _runner;
 
-	private String _homeDirForPropertiesFiles = "./packages/JcDevopsConsole/resources/files/properties";
+	private File _homeDirForPropertiesFiles = new File("./packages/JcDevopsConsole/resources/files/properties");
 	
 	public interface WakerDelegate {
 		public void deploymentsIsReader(Deployment deployment);
@@ -77,7 +77,7 @@ public class Deployment {
 	
 	public Deployment(IData doc, String dirForPropertiesFiles) {
 		
-		_homeDirForPropertiesFiles = dirForPropertiesFiles;
+		_homeDirForPropertiesFiles = new File(dirForPropertiesFiles);
 		
 		IDataCursor c = doc.getCursor();
 		this.name = IDataUtil.getString(c, "name");
@@ -189,7 +189,7 @@ public class Deployment {
 	/* 
 	 Updates all end-point references to containers (used in docker-compose) to instead reference k8s services 
 	 */
-	public boolean updateContainerReferences(String appPrefix, String buildDir, Deployment[] deployments, Build[] builds, String environment) throws FileNotFoundException, IOException {
+	public boolean updateContainerReferences(String appPrefix, String buildDir, Deployment[] deployments, Build[] builds, String environment, String currentNamespace, String defaultNamespace) throws FileNotFoundException, IOException {
 			
 		boolean buildRequired = false;
 				
@@ -215,10 +215,12 @@ public class Deployment {
 			Environment env = c.getEnvironment(environment);
 			
 			if (c.active) {
-						
+					
+				File buildDirForContainer = new File(buildDir, c.name);
+
 				// check for any 
 				for (String containerName : names.keySet()) {
-					
+										
 					// check env vars
 
 					if (env.env != null) {
@@ -226,7 +228,7 @@ public class Deployment {
 							if (a.target != null && a.target.contains(containerName) && !a.source.equals("mcgw_downloads_apis")) {
 								
 								System.out.println("Got a match, will replace with " + names.get(containerName).name);
-								a.target = a.target.replace(containerName, replacement(containerName, appPrefix, names.get(containerName), c, a, environment));
+								a.target = a.target.replace(containerName, replacement(containerName, appPrefix, names.get(containerName), c, a, environment, currentNamespace, defaultNamespace));
 							}
 						}
 					}
@@ -238,9 +240,9 @@ public class Deployment {
 					if (c.build != null) {
 						for (BuildCommand b : c.build.buildCommands.values()) {
 														
-							if (b.commandType == CommandType.file && b.fileType != null && b.fileType.equals("properties")) {
+							if ((b.commandType == CommandType.file || b.commandType == CommandType.copy || b.commandType == CommandType.add) && b.fileType != null && b.fileType.equals("properties")) {
 								
-								updatePropertyFileForReferences(buildDir, buildDir, b.source, containerName, replacement(containerName, appPrefix, names.get(containerName), c, null, environment), names.get(containerName).version);
+								updatePropertyFileForReferences(buildDirForContainer, buildDirForContainer, b.source, containerName, replacement(containerName, appPrefix, names.get(containerName), c, null, environment, currentNamespace, defaultNamespace), names.get(containerName).version);
 								propsFileProcessed = true;
 							}
 						}
@@ -260,21 +262,25 @@ public class Deployment {
 									
 									BuildCommand bc = b.buildCommands.get(k);
 								
-									if (bc.commandType == CommandType.file && bc.fileType != null && bc.fileType.equals("properties")) {
+									if ((bc.commandType == CommandType.file || bc.commandType == CommandType.add || bc.commandType == CommandType.copy) && bc.fileType != null && bc.fileType.equals("properties")) {
 									
+										boolean didChange = false;
 										if (environment == null) {
 										
 											// only check generic props file
 											
 											if (!bc.source.startsWith("_")) {
-												buildRequired = addUpdatedPropertiesFileToBuild(c, bc, buildDir, appPrefix, containerName, names, environment) || buildRequired;
+												didChange = addUpdatedPropertiesFileToBuild(c, bc, buildDirForContainer, appPrefix, containerName, names, environment, currentNamespace, defaultNamespace) || buildRequired;
 												propsFileProcessed = true;
 											}
 										} else if (bc.source.startsWith("_" + environment.toLowerCase() + "_")) {
 										// only check file specific to this environment or fall back on generic if not set
-											buildRequired = addUpdatedPropertiesFileToBuild(c, bc, buildDir, appPrefix, containerName, names, environment) || buildRequired;
+											didChange = addUpdatedPropertiesFileToBuild(c, bc, buildDirForContainer, appPrefix, containerName, names, environment, currentNamespace, defaultNamespace) || buildRequired;
 											propsFileProcessed = true;
 										}
+										
+										if (didChange)
+											buildRequired = true;
 									}
 								}
 								
@@ -291,17 +297,19 @@ public class Deployment {
 					c.build.sourceImage = new Image(c.image);
 
 					if (buildRequired) {
-						c.image = c.build.targetImage.tag;
+						if (c.build.targetImage != null)
+							c.image = c.build.targetImage.tag;
+						else
+							c.image = c.build.sourceImage.tag;
 					} 	
 				}
 			}
 		}
 	
-		
 		return buildRequired;
 	}
 	
-	private boolean addUpdatedPropertiesFileToBuild(DockerContainer c, BuildCommand bc, String buildDir, String appPrefix, String containerName, Map<String, Deployment> names, String environment) throws FileNotFoundException, IOException {
+	private boolean addUpdatedPropertiesFileToBuild(DockerContainer c, BuildCommand bc, File buildDir, String appPrefix, String containerName, Map<String, Deployment> names, String environment, String currentNamespace, String defaultNamespace) throws FileNotFoundException, IOException {
 		
 		Build build = null;
 		
@@ -314,10 +322,10 @@ public class Deployment {
 		BuildCommand cmd = build.buildCommands.get(bc.source);
 		
 		if (cmd == null) {
-			cmd = new BuildCommand(CommandType.file, "properties", bc.source, bc.target);
+			cmd = new BuildCommand(CommandType.add, "properties", bc.source, bc.target);
 		}
 				
-		if (updatePropertyFileForReferences(_homeDirForPropertiesFiles, buildDir, bc.source, containerName, replacement(containerName, appPrefix, names.get(containerName), c, null, environment), names.get(containerName).version)) {
+		if (updatePropertyFileForReferences(_homeDirForPropertiesFiles, buildDir, bc.source, containerName, replacement(containerName, appPrefix, names.get(containerName), c, null, environment, currentNamespace, defaultNamespace), names.get(containerName).version)) {
 			
 			// only record it, if we did make a change
 			
@@ -332,10 +340,10 @@ public class Deployment {
 		}
 	}
 	
-	private String replacement(String containerNameToReplace, String appPrefix, Deployment deployment, DockerContainer c, Arg arg, String environment) {
+	private String replacement(String containerNameToReplace, String appPrefix, Deployment deployment, DockerContainer c, Arg arg, String environment, String currentNamespace, String defaultNamespace) {
 		
 		if (deployment.name.equals(this.name) && this.hasContainer(containerNameToReplace)) {
-			//container is referenced in same host, so we can simply replace it with localhost
+			//container is referenced in same pod, so we can simply replace it with localhost
 
 			return "localhost";
 		} else {
@@ -347,45 +355,21 @@ public class Deployment {
 			
 			String serviceType = "clusterip";
 			
-			/*for (DockerContainer dc : deployment.containers) {
-				
-				Environment env = dc.getEnvironment(environment);
-				
-				if (arg != null && dc.name.equals(containerNameToReplace)) {
-					for (Port p : env.ports) {
-						if (arg.target.contains(":" + p.internal)) {
-							serviceType = p.serviceType.toLowerCase();
-							break;
-						}
-					}
-						
-					/*if (serviceType == null) { 
-						if (env.ports.length > 0) {
-							serviceType = env.ports[0].serviceType.toLowerCase();
-						} else {
-							serviceType = "clusterip";
-						}
-					} else if (serviceType.equals("ingress")) {
-						// use internal service, never external
-						serviceType = "clusterip";
-					}*
-					
-						
-					break;
-				}
-			}*/
-			
 			String txt = serviceType + "-" + deployment.name.toLowerCase().replace(" ", "-");
 		
 			if (appPrefix != null)
 				txt = appPrefix + txt;
 			
-			if (deployment.version != null) {
+			if (deployment.version != null && deployment.version.length() > 0) {
 				txt += "-" + deployment.version;
 			}
 			
-			if (deployment.namespace != null) {
-				txt += "." + deployment.namespace;
+			if (deployment.namespace != null && deployment.namespace.length() > 0) {
+				if (currentNamespace == null || !currentNamespace.equals(deployment.namespace)) {
+					txt += "." + deployment.namespace;
+				}
+			} else if (defaultNamespace != null && (currentNamespace == null || !currentNamespace.equals(defaultNamespace))) {
+				txt += "." + defaultNamespace;
 			}
 			
 			return txt;
@@ -592,10 +576,11 @@ public class Deployment {
 		return done;
 	}
 	
-	private boolean updatePropertyFileForReferences(String srcDir, String buildDir, String fileName, String ref, String newRef, String suffix) throws FileNotFoundException, IOException {
+	private boolean updatePropertyFileForReferences(File srcDir, File buildDir, String fileName, String ref, String newRef, String suffix) throws FileNotFoundException, IOException {
 				
 		boolean didUpdate = false;
-		File outDir = buildDir.endsWith("/resources") ? new File(buildDir) : new File(buildDir, "resources");		
+		//File outDir = buildDir.endsWith("/resources") ? new File(buildDir) : new File(new File(buildDir, ref), "resources");
+		File outDir = new File(buildDir, "resources");
 		File outFile = new File(outDir, fileName + ".properties");
 
 		File inFile;
@@ -615,7 +600,7 @@ public class Deployment {
 			inFile = outFile;
 			outFile = new File(outDir, fileName + ".properties.copy");
 		}
-		
+				
 		try (BufferedReader rdr = new BufferedReader(new FileReader(inFile));
 			 BufferedWriter wrt = new BufferedWriter(new FileWriter(outFile))) {
 			
@@ -627,15 +612,15 @@ public class Deployment {
 					String key = line.substring(0, index);
 					String value = line.substring(index+1);
 					
-					if (value.contains(ref)) {
+					if (value.equals(ref) || value.contains("/"+ref) || value.contains(ref+":")) {
 						line = key + "=" + value.replace(ref, newRef);
 						
 						if (suffix != null && !newRef.endsWith(suffix)) {
 							line += "-" + suffix;
 						}
 						didUpdate = true;
-					} else if (suffix != null && value.length() > 0 && newRef.startsWith(value) && !value.contains(suffix)) {
-						// properties file has already includes new label, but does'n include the suffix yet
+					} else if (suffix != null && value.length() > 0 && newRef.equals(value) && !value.contains(suffix)) {
+						// properties file has already includes new label, but does'nt include the suffix yet
 						
 						if (newRef.endsWith(suffix)) {
 							line = key + "=" + value.replace(value, newRef);
@@ -663,6 +648,10 @@ public class Deployment {
 					
 				// no change made					
 				Files.delete(FileSystems.getDefault().getPath(outFile.getAbsolutePath()));
+				
+				if (outDir.list().length == 0) {
+					outDir.delete();
+				}
 			}
 		}
 		

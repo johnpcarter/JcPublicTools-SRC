@@ -9,7 +9,10 @@ import com.wm.data.IDataUtil;
 public class BuildCommand {
 
 	public enum CommandType {
+		entrypoint,
 		env,
+		copy,
+		add,
 		file,
 		run
 	}
@@ -31,12 +34,22 @@ public class BuildCommand {
 		
 		IDataCursor c = data.getCursor();
 		
-		if (IDataUtil.getString(c, "commandType").equalsIgnoreCase("env"))
+		String cType = IDataUtil.getString(c, "commandType");
+		
+		if (cType.equalsIgnoreCase("env"))
 			commandType = CommandType.env;
-		else if (IDataUtil.getString(c, "commandType").equalsIgnoreCase("run"))
+		else if (cType.equalsIgnoreCase("run"))
 			commandType = CommandType.run;
-		else if (IDataUtil.getString(c, "commandType").equalsIgnoreCase("file"))
+		else if (cType.equalsIgnoreCase("file"))
 			commandType = CommandType.file;
+		else if (cType.equalsIgnoreCase("copy"))
+			commandType = CommandType.copy;
+		else if (cType.equalsIgnoreCase("add"))
+			commandType = CommandType.add;
+		else if (cType.equalsIgnoreCase("entrypoint"))
+			commandType = CommandType.entrypoint;
+		else
+			throw new RuntimeException("Invalid command type " + cType);
 		
 		if (IDataUtil.getString(c, "fileType") != null)
 			fileType = IDataUtil.getString(c, "fileType").toLowerCase();
@@ -55,7 +68,11 @@ public class BuildCommand {
 		IData d = IDataFactory.create();
 		IDataCursor c = d.getCursor();
 		
-		IDataUtil.put(c, "commandType", commandType.toString());
+		if (commandType != null)
+			IDataUtil.put(c, "commandType", commandType.toString());
+		else 
+			IDataUtil.put(c, "commandType", CommandType.file.toString());
+
 		IDataUtil.put(c, "fileType", fileType);
 		IDataUtil.put(c, "source", source);
 		IDataUtil.put(c, "target", target);

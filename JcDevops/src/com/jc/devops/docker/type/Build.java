@@ -47,7 +47,7 @@ public class Build {
 		IDataCursor c = doc.getCursor();
 		this.name = IDataUtil.getString(c, "name");
 		this.context = IDataUtil.getString(c, "context");
-		this.dockerFile = IDataUtil.getString(c, "dockerFile");
+		this.dockerFile = IDataUtil.getString(c, "dockerfile");
 		IData[] commands = IDataUtil.getIDataArray(c, "buildCommands");
 		
 		if (IDataUtil.getIData(c, "sourceImage") != null) {
@@ -81,7 +81,7 @@ public class Build {
 		if (this.sourceImage != null)
 			IDataUtil.put(c, "fromImage", this.sourceImage.tag);
 		
-		IDataUtil.put(c, "dockerFile", dockerFile);
+		IDataUtil.put(c, "dockerfile", dockerFile);
 
 		List<IData> out = new ArrayList<IData>();
 		
