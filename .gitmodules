@@ -1,6 +1,3 @@
 [submodule "WmRndInvokeInterceptor"]
 	path = WmRndInvokeInterceptor
 	url = https://github.com/johnpcarter/WmRndInvokeInterceptor.git
-[submodule "e2e-api-agent"]
-	path = e2e-api-agent
-	url = https://github.com/johnpcarter/e2eAPIGatewayAgent.git
