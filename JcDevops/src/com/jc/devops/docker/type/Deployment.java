@@ -58,7 +58,7 @@ public class Deployment {
 	private List<WakerDelegate> _wakers = new ArrayList<WakerDelegate>();
 	private Runnable _runner;
 
-	private File _homeDirForPropertiesFiles = new File("./packages/JcDevopsConsole/resources/files/properties");
+	private File _homeDirForFiles = new File("./packages/JcDevopsConsole/resources/files");
 	
 	public interface WakerDelegate {
 		public void deploymentsIsReader(Deployment deployment);
@@ -75,9 +75,9 @@ public class Deployment {
 			this._defaultDockerHost = this.hostName;
 	}
 	
-	public Deployment(IData doc, String dirForPropertiesFiles) {
+	public Deployment(IData doc, String dirForFiles) {
 		
-		_homeDirForPropertiesFiles = new File(dirForPropertiesFiles);
+		_homeDirForFiles = new File(dirForFiles);
 		
 		IDataCursor c = doc.getCursor();
 		this.name = IDataUtil.getString(c, "name");
@@ -186,32 +186,48 @@ public class Deployment {
 		return match;
 	}
 	
+	public static boolean updateContainerReferences(Deployment[] deployments, Build[] builds, String appPrefix, String buildDir, String environment, String defaultNamespace) throws FileNotFoundException, IOException {
+		
+		boolean buildRequired = false;
+
+		Map<String, Map<String, String>> dnames = new HashMap<String, Map<String, String>>();
+
+		for (Deployment d : deployments) {
+			
+			Map<String, String> inner = new HashMap<String, String>();
+			
+			for (DockerContainer c : d.containers) {
+				inner.put(c.hostname != null ? c.hostname : c.name, replacement(appPrefix, d, defaultNamespace));
+			}
+			
+			dnames.put(d.name, inner);
+		}
+		
+		for (Deployment d : deployments) {
+			if (d.updateContainerReferences(environment, buildDir, deployments, builds, dnames, defaultNamespace)) {
+				buildRequired = true;
+			}
+		}
+		
+		return buildRequired;
+	}
+	
 	/* 
 	 Updates all end-point references to containers (used in docker-compose) to instead reference k8s services 
 	 */
-	public boolean updateContainerReferences(String appPrefix, String buildDir, Deployment[] deployments, Build[] builds, String environment, String currentNamespace, String defaultNamespace) throws FileNotFoundException, IOException {
+	protected boolean updateContainerReferences(String environment, String buildDir, Deployment[] deployments, Build[] builds, Map<String, Map<String, String>> newNames, String defaultNamespace) throws FileNotFoundException, IOException {
 			
 		boolean buildRequired = false;
-				
-		Map<String, Deployment> names = new HashMap<String, Deployment>();
 		
-		// build a table of all container references and their deployments names across entire project
-		
-		for (Deployment deployment : deployments) {
-						
-			for (DockerContainer c : deployment.containers) {
-				
-				if (c.name != null) {
-					names.put(c.name, deployment);
-				}
-			}
-		}
+		System.out.println("======= checking deployment " + this.name);
 		
 		// loop over containers in this deployment, swapping out their references to containers that are in other deployments
 		// i.e. must reference their service name in k8s NOT host
 		
 		for (DockerContainer c: this.containers) {
 							
+			System.out.println("======= checking container " + c.name);
+			
 			Environment env = c.getEnvironment(environment);
 			
 			if (c.active) {
@@ -219,73 +235,100 @@ public class Deployment {
 				File buildDirForContainer = new File(buildDir, c.name);
 
 				// check for any 
-				for (String containerName : names.keySet()) {
+				for (String dname : newNames.keySet()) {
+					
+					Map<String, String> containerRefs = newNames.get(dname);
+					
+					for (String containerName : containerRefs.keySet()) {
 										
-					// check env vars
+						// check env vars
 
-					if (env.env != null) {
-						for (Arg a : env.env) {
-							if (a.target != null && a.target.contains(containerName) && !a.source.equals("mcgw_downloads_apis")) {
+						if (env.env != null) {
+							for (Arg a : env.env) {
+								if (a.target != null && a.target.contains(containerName) && !a.source.equals("mcgw_downloads_apis")) {
 								
-								System.out.println("Got a match, will replace with " + names.get(containerName).name);
-								a.target = a.target.replace(containerName, replacement(containerName, appPrefix, names.get(containerName), c, a, environment, currentNamespace, defaultNamespace));
+									System.out.println("Got a match, will replace " + containerName + " with " + containerRefs.get(containerName));
+									
+									a.target = swap(a.target, containerName, dname, containerRefs.get(containerName), defaultNamespace);
+								}
 							}
 						}
 					}
-					
-					// check runtime build params
+				}
+				
+				// check runtime build params
 
-					boolean propsFileProcessed = false;
-							
-					if (c.build != null) {
-						for (BuildCommand b : c.build.buildCommands.values()) {
-														
-							if ((b.commandType == CommandType.file || b.commandType == CommandType.copy || b.commandType == CommandType.add) && b.fileType != null && b.fileType.equals("properties")) {
-								
-								updatePropertyFileForReferences(buildDirForContainer, buildDirForContainer, b.source, containerName, replacement(containerName, appPrefix, names.get(containerName), c, null, environment, currentNamespace, defaultNamespace), names.get(containerName).version);
-								propsFileProcessed = true;
-							}
-						}
-					}
-					
-					// Do we have a properties file in the underlying image that needs updating ?
-					
-					if (!propsFileProcessed && builds != null) {
+				boolean propsFileProcessed = false;
 						
-						for (Build b: builds) {
+				if (c.build != null) {
+					for (BuildCommand b : c.build.buildCommands.values()) {
+													
+						if ((b.commandType == CommandType.file || b.commandType == CommandType.copy || b.commandType == CommandType.add) && b.fileType != null && 
+								(b.fileType.equals("properties") || (b.fileType.equals("resource") && (b.source.endsWith(".txt") || b.source.endsWith(".yml") || b.source.endsWith(".json") || b.source.endsWith(".conf") || b.source.endsWith(".cnf"))))) {
 							
-							// find build for container
-														
-							if (c.name.toLowerCase().equals(b.name.toLowerCase())) {
+							File sourceDir = buildDirForContainer;
+							File tgtDir = buildDirForContainer;
+							String source = b.source;
+
+							if (b.fileType.equals("resource")) {
+								// properties files has already been copied in below, but not other files
 								
-								for (String k : b.buildCommands.keySet()) {
-									
-									BuildCommand bc = b.buildCommands.get(k);
+								sourceDir = new File(_homeDirForFiles, "other");
 								
-									if ((bc.commandType == CommandType.file || bc.commandType == CommandType.add || bc.commandType == CommandType.copy) && bc.fileType != null && bc.fileType.equals("properties")) {
+								if (source.indexOf("/") != -1) {
+									// have a sub-directory, need to recreate here
 									
-										boolean didChange = false;
-										if (environment == null) {
+									tgtDir = new File(tgtDir, new File(source).getParent());
+									source = new File(source).getName();
+								}
+							} else {
+								tgtDir = new File(tgtDir, "resources");
+								source += ".properties";
+							}
+							
+							updateTextFileForReferences(c.name, sourceDir, tgtDir, source, newNames, defaultNamespace);
+							propsFileProcessed = true;
+						}
+					}
+				}
+				
+				// Do we have any config/properties file in the underlying image that needs updating ?
+				
+				if (!propsFileProcessed && builds != null) {
+					
+					for (Build b: builds) {
+						
+						// find build for container
+													
+						if (c.matchBuild(b)) {
+							
+							for (String k : b.buildCommands.keySet()) {
+								
+								BuildCommand bc = b.buildCommands.get(k);
+							
+								if ((bc.commandType == CommandType.file || bc.commandType == CommandType.add || bc.commandType == CommandType.copy) && bc.fileType != null && bc.fileType.equals("properties")) {
+								
+									boolean didChange = false;
+									if (environment == null) {
+									
+										// only check generic props file
 										
-											// only check generic props file
-											
-											if (!bc.source.startsWith("_")) {
-												didChange = addUpdatedPropertiesFileToBuild(c, bc, buildDirForContainer, appPrefix, containerName, names, environment, currentNamespace, defaultNamespace) || buildRequired;
-												propsFileProcessed = true;
-											}
-										} else if (bc.source.startsWith("_" + environment.toLowerCase() + "_")) {
-										// only check file specific to this environment or fall back on generic if not set
-											didChange = addUpdatedPropertiesFileToBuild(c, bc, buildDirForContainer, appPrefix, containerName, names, environment, currentNamespace, defaultNamespace) || buildRequired;
+										if (!bc.source.startsWith("_")) {
+											didChange = addUpdatedPropertiesFileToBuild(c, bc, buildDirForContainer, newNames, defaultNamespace) || buildRequired;
 											propsFileProcessed = true;
 										}
-										
-										if (didChange)
-											buildRequired = true;
+									} else if (bc.source.startsWith("_" + environment.toLowerCase() + "_")) {
+									// only check file specific to this environment or fall back on generic if not set
+										didChange = addUpdatedPropertiesFileToBuild(c, bc, buildDirForContainer, newNames, defaultNamespace) || buildRequired;
+										propsFileProcessed = true;
 									}
+									
+									if (didChange)
+										buildRequired = true;
 								}
-								
-								break;
 							}
+							
+							break;
 						}
 					}
 				}
@@ -309,7 +352,7 @@ public class Deployment {
 		return buildRequired;
 	}
 	
-	private boolean addUpdatedPropertiesFileToBuild(DockerContainer c, BuildCommand bc, File buildDir, String appPrefix, String containerName, Map<String, Deployment> names, String environment, String currentNamespace, String defaultNamespace) throws FileNotFoundException, IOException {
+	private boolean addUpdatedPropertiesFileToBuild(DockerContainer c, BuildCommand bc, File buildDir,  Map<String, Map<String, String>> newNames, String defaultNamespace) throws FileNotFoundException, IOException {
 		
 		Build build = null;
 		
@@ -325,7 +368,7 @@ public class Deployment {
 			cmd = new BuildCommand(CommandType.add, "properties", bc.source, bc.target);
 		}
 				
-		if (updatePropertyFileForReferences(_homeDirForPropertiesFiles, buildDir, bc.source, containerName, replacement(containerName, appPrefix, names.get(containerName), c, null, environment, currentNamespace, defaultNamespace), names.get(containerName).version)) {
+		if (updateTextFileForReferences(c.name, new File(_homeDirForFiles, "properties"), new File(buildDir, "resources"), bc.source + ".properties", newNames, defaultNamespace)) {
 			
 			// only record it, if we did make a change
 			
@@ -337,42 +380,6 @@ public class Deployment {
 			return true;
 		} else {
 			return false;
-		}
-	}
-	
-	private String replacement(String containerNameToReplace, String appPrefix, Deployment deployment, DockerContainer c, Arg arg, String environment, String currentNamespace, String defaultNamespace) {
-		
-		if (deployment.name.equals(this.name) && this.hasContainer(containerNameToReplace)) {
-			//container is referenced in same pod, so we can simply replace it with localhost
-
-			return "localhost";
-		} else {
-			
-			// container is in different deployment, so we need to replace with the name of the service
-			// which will be <prefix>-<serviceType>-<deployment-name>.<namespace>
-			
-			// find service type for port 
-			
-			String serviceType = "clusterip";
-			
-			String txt = serviceType + "-" + deployment.name.toLowerCase().replace(" ", "-");
-		
-			if (appPrefix != null)
-				txt = appPrefix + txt;
-			
-			if (deployment.version != null && deployment.version.length() > 0) {
-				txt += "-" + deployment.version;
-			}
-			
-			if (deployment.namespace != null && deployment.namespace.length() > 0) {
-				if (currentNamespace == null || !currentNamespace.equals(deployment.namespace)) {
-					txt += "." + deployment.namespace;
-				}
-			} else if (defaultNamespace != null && (currentNamespace == null || !currentNamespace.equals(defaultNamespace))) {
-				txt += "." + defaultNamespace;
-			}
-			
-			return txt;
 		}
 	}
 	
@@ -576,12 +583,36 @@ public class Deployment {
 		return done;
 	}
 	
-	private boolean updatePropertyFileForReferences(File srcDir, File buildDir, String fileName, String ref, String newRef, String suffix) throws FileNotFoundException, IOException {
+	private static String replacement(String appPrefix, Deployment deployment, String defaultNamespace) {
+		
+		// find service type for port 
+			
+		String serviceType = "clusterip";
+			
+		String txt = serviceType + "-" + deployment.name.toLowerCase().replace(" ", "-").replace("_", "-");
+		
+		if (appPrefix != null) {
+			txt = appPrefix + txt;
+		}
+		
+		if (deployment.version != null && deployment.version.length() > 0) {
+			txt += "-" + deployment.version;
+		}
+			
+		if (deployment.namespace != null && deployment.namespace.length() > 0) {
+			txt += "." + deployment.namespace;
+		} else if (defaultNamespace != null) {
+			txt += "." + defaultNamespace;
+		}
+			
+		return txt;
+	}
+
+	private boolean updateTextFileForReferences(String containerName, File srcDir, File outDir, String fileName,  Map<String, Map<String, String>> newNames, String defaultNamespace) throws FileNotFoundException, IOException {
 				
 		boolean didUpdate = false;
 		//File outDir = buildDir.endsWith("/resources") ? new File(buildDir) : new File(new File(buildDir, ref), "resources");
-		File outDir = new File(buildDir, "resources");
-		File outFile = new File(outDir, fileName + ".properties");
+		File outFile = new File(outDir, fileName);
 
 		File inFile;
 		boolean dontDelete = false;
@@ -591,43 +622,42 @@ public class Deployment {
 			// read from source
 			
 			outDir.mkdirs();
-			inFile = new File(srcDir, fileName + ".properties");			
+			inFile = new File(srcDir, fileName);
+			
+			if (!inFile.exists()) {
+				// if the file doesn't exist, probably because it has the container name as a prefix, try that
+				
+				inFile = new File(srcDir, containerName.toLowerCase() + "-" + fileName);
+			}
 		} else {
 			
 			// already started rebuild, work from already started
 						
 			dontDelete = true;
 			inFile = outFile;
-			outFile = new File(outDir, fileName + ".properties.copy");
+			outFile = new File(outDir, fileName + ".copy");
 		}
-				
+			
+		System.out.println("======= checking file " + fileName);
+
 		try (BufferedReader rdr = new BufferedReader(new FileReader(inFile));
 			 BufferedWriter wrt = new BufferedWriter(new FileWriter(outFile))) {
 			
 			String line = null;
 			while((line=rdr.readLine()) != null) {
-								
-				if (line.contains("=")) {
-					int index = line.indexOf("=");
-					String key = line.substring(0, index);
-					String value = line.substring(index+1);
+							
+				for (String dname : newNames.keySet()) {
+					Map<String, String> refs = newNames.get(dname);
 					
-					if (value.equals(ref) || value.contains("/"+ref) || value.contains(ref+":")) {
-						line = key + "=" + value.replace(ref, newRef);
-						
-						if (suffix != null && !newRef.endsWith(suffix)) {
-							line += "-" + suffix;
+					for (String ref : refs.keySet()) {
+				
+						if (line.equals(ref) || line.equals("="+ref) || line.contains("/"+ref) || line.contains(ref+":") 
+								|| line.contains("'"+ref+"'") || line.contains("\""+ref+"\"")) {
+							
+							line = swap(line, ref, dname, refs.get(ref), defaultNamespace);
+														
+							didUpdate = true;
 						}
-						didUpdate = true;
-					} else if (suffix != null && value.length() > 0 && newRef.equals(value) && !value.contains(suffix)) {
-						// properties file has already includes new label, but does'nt include the suffix yet
-						
-						if (newRef.endsWith(suffix)) {
-							line = key + "=" + value.replace(value, newRef);
-						} else {
-							line = key + "=" + value.replace(value, newRef + "-" + suffix);
-						}
-						didUpdate = true;
 					}
 				}
 				
@@ -638,13 +668,15 @@ public class Deployment {
 		
 		if (outFile.getName().endsWith(".copy")) {
 			if (didUpdate) {				
+				System.out.println("======= saving changes for " + fileName);
+
 				Files.move(FileSystems.getDefault().getPath(outFile.getAbsolutePath()), FileSystems.getDefault().getPath(inFile.getAbsolutePath()), StandardCopyOption.REPLACE_EXISTING);
 			} else { 
 				Files.delete(FileSystems.getDefault().getPath(outFile.getAbsolutePath()));
 			}
 		} else {
 				// worked on original
-			if (!didUpdate && !buildDir.equals(srcDir) && !dontDelete) {
+			if (!didUpdate && !outDir.equals(srcDir) && !dontDelete) {
 					
 				// no change made					
 				Files.delete(FileSystems.getDefault().getPath(outFile.getAbsolutePath()));
@@ -656,5 +688,24 @@ public class Deployment {
 		}
 		
 		return didUpdate;
+	}
+	
+	private String swap(String line, String oldRef, String deployment, String newRef, String defaultNamespace) {
+		
+		if (this.name.equals(deployment) && this.hasContainer(oldRef)) {
+				
+			// container is hosted in the same deployment, thus same virtual host in k8s
+				
+			newRef = "localhost";
+		} else if (newRef.endsWith("." + this.namespace) || (this.namespace == null && newRef.endsWith(defaultNamespace))) {
+			
+			// reference refers to a namespace, we can remove it as it is the same as the current deployment
+			
+			newRef = newRef.substring(0, newRef.lastIndexOf("."));
+		}
+		
+		System.out.println("======= replacing ref " + oldRef + " for ref " + newRef);
+
+		return line.replace(oldRef, newRef);
 	}
 }

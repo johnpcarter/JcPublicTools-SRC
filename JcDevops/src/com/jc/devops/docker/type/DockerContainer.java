@@ -22,6 +22,7 @@ import com.wm.data.IDataUtil;
 public class DockerContainer {
 	
 	public String name;
+	public String buildRef;
 	public String image;
 	public String hostname;
 	public boolean active;
@@ -44,6 +45,7 @@ public class DockerContainer {
 		IDataCursor c = doc.getCursor();
 		this.name = IDataUtil.getString(c, "name");
 		this.image = IDataUtil.getString(c, "image");
+		this.buildRef = IDataUtil.getString(c, "buildRef");
 		this.hostname = IDataUtil.getString(c, "hostname");
 		this.active = IDataUtil.getString(c, "active") != null && IDataUtil.getString(c, "active").equalsIgnoreCase("true");
 		this.type = IDataUtil.getString(c, "type");
@@ -79,6 +81,9 @@ public class DockerContainer {
 		IDataUtil.put(c, "name", this.name);
 		IDataUtil.put(c, "image", this.image);
 		
+		if (buildRef != null) 
+			IDataUtil.put(c, buildRef, buildRef);
+		
 		if (build != null)
 			IDataUtil.put(c, "build", build.toIData());
 
@@ -110,6 +115,17 @@ public class DockerContainer {
 		return d;
 	}
 
+	public boolean matchBuild(Build b) {
+	
+		if (this.buildRef != null) {
+			return this.buildRef.equals(b.name);
+		} else if (this.build != null) {
+			return this.build.name.equals(b.name);
+		} else {
+			return this.name.toLowerCase().equals(b.name.toLowerCase());
+		}
+	}
+	
 	protected void createContainer(DockerClient dockerClient, String buildno, String composeName, String environmentName) throws DockerException, InterruptedException, ServiceException {
 				
 		this._create(dockerClient, composeName, environmentName);

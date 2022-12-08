@@ -10,6 +10,7 @@ public class BuildCommand {
 
 	public enum CommandType {
 		entrypoint,
+		healthcheck,
 		env,
 		copy,
 		add,
@@ -48,6 +49,8 @@ public class BuildCommand {
 			commandType = CommandType.add;
 		else if (cType.equalsIgnoreCase("entrypoint"))
 			commandType = CommandType.entrypoint;
+		else if (cType.equalsIgnoreCase("healthcheck"))
+			commandType = CommandType.healthcheck;
 		else
 			throw new RuntimeException("Invalid command type " + cType);
 		

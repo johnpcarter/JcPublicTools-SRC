@@ -319,7 +319,12 @@ public class PackageInfo {
 				 						 
 				 int o = line.indexOf("SERVICE=\"");
 				 line = line.substring(o+9);
-				 line = line.substring(0, line.indexOf(("\"")));
+				 
+				 if (line.indexOf("\"") != -1) {
+					 line = line.substring(0, line.indexOf(("\"")));
+				 } else {
+					 
+				 }
 				 
 				 svc.depends.add(new ServiceInfo(line));						 
 		}
